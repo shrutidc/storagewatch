@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS alerts (
     resolved BOOLEAN DEFAULT FALSE
 );
 
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ai_explanation TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_alerts_hostname_created
     ON alerts (hostname, created_at DESC);
 

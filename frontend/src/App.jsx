@@ -1,7 +1,7 @@
 import { useAuth0 } from '@auth0/auth0-react'
 import { useState, useEffect } from 'react'
+import { NavLink, Outlet } from 'react-router-dom'
 import axios from 'axios'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import './App.css'
 
 function App() {
@@ -9,23 +9,31 @@ function App() {
   const [metrics, setMetrics] = useState(null)
   const [history, setHistory] = useState([])
   const [alerts, setAlerts] = useState([])
-  const [explaining, setExplaining] = useState(false)
-  const [explanation, setExplanation] = useState(null)
+  const [volumes, setVolumes] = useState([])
+  const [systemInfo, setSystemInfo] = useState(null)
+  const [lastRefresh, setLastRefresh] = useState(null)
+
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatThreadId, setChatThreadId] = useState(null)
+  const [chatSending, setChatSending] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetchMetrics()
-      const interval = setInterval(fetchMetrics, 5000)
+      fetchAll()
+      const interval = setInterval(fetchAll, 5000)
       return () => clearInterval(interval)
     }
   }, [isAuthenticated])
 
-  const fetchMetrics = async () => {
+  const fetchAll = async () => {
     try {
-      const [current, hist, alertsData] = await Promise.all([
+      const [current, hist, alertsData, volumesData] = await Promise.all([
         axios.get('/api/metrics/current'),
         axios.get('/api/metrics/history?limit=100'),
         axios.get('/api/alerts'),
+        axios.get('/api/volumes'),
       ])
       setMetrics(current.data)
 
@@ -40,6 +48,21 @@ function App() {
       if (alertsData.data && Array.isArray(alertsData.data)) {
         setAlerts(alertsData.data)
       }
+
+      if (volumesData.data && Array.isArray(volumesData.data)) {
+        setVolumes(volumesData.data)
+      }
+
+      // System info (disk/APFS) refreshes slowly on the collector side (~60s)
+      // and may 404 briefly on first load — don't let that break the main poll.
+      try {
+        const sysInfo = await axios.get('/api/system-info')
+        setSystemInfo(sysInfo.data)
+      } catch (err) {
+        // not received yet — fine, keep previous value
+      }
+
+      setLastRefresh(new Date())
     } catch (err) {
       console.error('Failed to fetch metrics:', err)
     }
@@ -57,32 +80,26 @@ function App() {
     return status === 'Critical' ? '#d32f2f' : status === 'Warning' ? '#f57c00' : '#388e3c'
   }
 
-  const handleExplainAI = async () => {
-    if (!metrics) return
+  const handleSendChat = async (e) => {
+    e.preventDefault()
+    const text = chatInput.trim()
+    if (!text || chatSending) return
 
-    setExplaining(true)
+    setChatInput('')
+    setChatMessages(prev => [...prev, { role: 'user', content: text }])
+    setChatSending(true)
+
     try {
-      const payload = {
-        filesystem_type: metrics.filesystem_type,
-        used_percent: metrics.used_percent,
-        read_throughput: metrics.read_bytes_per_sec,
-        write_throughput: metrics.write_bytes_per_sec,
-        hostname: metrics.hostname,
-      }
-
-      if (alerts.length > 0) {
-        const latestAlert = alerts[0]
-        payload.alert_type = latestAlert.alert_type
-        payload.alert_message = latestAlert.message
-        payload.alert_severity = latestAlert.severity
-      }
-
-      const response = await axios.post('/api/ai/explain', payload)
-      setExplanation(response.data.explanation || 'Analysis complete.')
+      const response = await axios.post('/api/ai/chat', {
+        message: text,
+        thread_id: chatThreadId,
+      })
+      setChatThreadId(response.data.thread_id)
+      setChatMessages(prev => [...prev, { role: 'assistant', content: response.data.message }])
     } catch (err) {
-      setExplanation(`Unable to get AI analysis: ${err.message}`)
+      setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.message}` }])
     } finally {
-      setExplaining(false)
+      setChatSending(false)
     }
   }
 
@@ -101,113 +118,77 @@ function App() {
   }
 
   return (
-    <div className="app">
-      <header>
-        <div className="header-left">
-          <h1>StorageWatch</h1>
-          {metrics && (
-            <div className="status-badge" style={{ backgroundColor: getStatusColor() }}>
-              {getSystemStatus()}
-            </div>
+    <div className="app-shell">
+      <nav className="sidebar">
+        <h2 className="sidebar-title">StorageWatch</h2>
+        <NavLink to="/" end className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Dashboard</NavLink>
+        <NavLink to="/volumes" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Volumes</NavLink>
+        <NavLink to="/disks" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Disks</NavLink>
+        <NavLink to="/apfs" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>APFS</NavLink>
+        <NavLink to="/performance" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Performance</NavLink>
+        <NavLink to="/alerts" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>
+          Alerts{alerts.length > 0 ? ` (${alerts.length})` : ''}
+        </NavLink>
+      </nav>
+
+      <div className="main-column">
+        <header>
+          <div className="header-left">
+            {metrics && (
+              <div className="status-badge" style={{ backgroundColor: getStatusColor() }}>
+                {getSystemStatus()}
+              </div>
+            )}
+          </div>
+          <div className="user-info">
+            <span>{user.name}</span>
+            <button onClick={() => logout()}>Logout</button>
+          </div>
+        </header>
+
+        <main>
+          {metrics ? (
+            <Outlet context={{ metrics, history, alerts, volumes, systemInfo, lastRefresh }} />
+          ) : (
+            <p className="no-data">No metrics available yet. Backend may be starting up...</p>
           )}
+        </main>
+      </div>
+
+      <button className="chat-toggle" onClick={() => setChatOpen(o => !o)}>
+        {chatOpen ? '✕' : '💬 Ask AI'}
+      </button>
+
+      {chatOpen && (
+        <div className="chat-widget">
+          <div className="chat-widget-header">StorageWatch AI</div>
+          <div className="chat-messages">
+            {chatMessages.length === 0 ? (
+              <p className="no-alerts">Ask about your storage — available on every page.</p>
+            ) : (
+              chatMessages.map((m, i) => (
+                <div key={i} className={`chat-message chat-${m.role}`}>
+                  <strong>{m.role === 'user' ? 'You' : 'AI'}:</strong> {m.content}
+                </div>
+              ))
+            )}
+            {chatSending && <div className="chat-message chat-assistant"><em>Thinking...</em></div>}
+          </div>
+          <form className="chat-input-row" onSubmit={handleSendChat}>
+            <input
+              type="text"
+              className="chat-input"
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              placeholder="Ask a question..."
+              disabled={chatSending}
+            />
+            <button type="submit" className="explain-btn" disabled={chatSending || !chatInput.trim()}>
+              Send
+            </button>
+          </form>
         </div>
-        <div className="user-info">
-          <span>{user.name}</span>
-          <button onClick={() => logout()}>Logout</button>
-        </div>
-      </header>
-
-      <main>
-        {metrics ? (
-          <>
-            <div className="metrics-grid">
-              <div className="metric-card">
-                <h3>Storage Usage</h3>
-                <p className="metric-value">{metrics.used_percent.toFixed(1)}%</p>
-                <div className="progress-bar">
-                  <div className="progress-fill" style={{ width: `${metrics.used_percent}%` }}></div>
-                </div>
-                <p className="metric-detail">
-                  {(metrics.used_bytes / 1e9).toFixed(1)} GB / {(metrics.total_bytes / 1e9).toFixed(1)} GB
-                </p>
-              </div>
-
-              <div className="metric-card">
-                <h3>Read Throughput</h3>
-                <p className="metric-value">{(metrics.read_bytes_per_sec / 1e6).toFixed(0)}</p>
-                <p className="metric-unit">MB/s</p>
-              </div>
-
-              <div className="metric-card">
-                <h3>Write Throughput</h3>
-                <p className="metric-value">{(metrics.write_bytes_per_sec / 1e6).toFixed(0)}</p>
-                <p className="metric-unit">MB/s</p>
-              </div>
-            </div>
-
-            <div className="chart-container">
-              <h2>Performance Graph (Last 100 samples)</h2>
-              {history.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={history}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis label={{ value: 'MB/s', angle: -90, position: 'insideLeft' }} />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="read" stroke="#8884d8" name="Read" dot={false} />
-                    <Line type="monotone" dataKey="write" stroke="#82ca9d" name="Write" dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <p>Loading chart data...</p>
-              )}
-            </div>
-
-            <div className="ai-container">
-              <h2>AI Analysis</h2>
-              <button
-                className="explain-btn"
-                onClick={handleExplainAI}
-                disabled={explaining}
-              >
-                {explaining ? 'Loading...' : 'Explain with AI'}
-              </button>
-              {explanation && (
-                <div className="explanation-box">
-                  <pre>{explanation}</pre>
-                </div>
-              )}
-            </div>
-
-            <div className="alerts-container">
-              <h2>Recent Alerts</h2>
-              {alerts.length === 0 ? (
-                <p className="no-alerts">✓ No active alerts</p>
-              ) : (
-                <div className="alerts-list">
-                  {alerts.map(a => (
-                    <div key={a.id} className={`alert-item alert-${a.severity.toLowerCase()}`}>
-                      <div className="alert-header">
-                        <span className="alert-type">{a.alert_type}</span>
-                        <span className="alert-time">
-                          {new Date(a.created_at).toLocaleTimeString()}
-                        </span>
-                      </div>
-                      <p className="alert-message">{a.message}</p>
-                      {a.metric_value && (
-                        <p className="alert-value">Value: {a.metric_value.toFixed(2)}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <p className="no-data">No metrics available yet. Backend may be starting up...</p>
-        )}
-      </main>
+      )}
     </div>
   )
 }

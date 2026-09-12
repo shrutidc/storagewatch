@@ -10,8 +10,50 @@ body {
   color: #333;
 }
 
-.app {
+.app-shell {
+  display: flex;
   min-height: 100vh;
+}
+
+.sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  background: #1e1e2e;
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-title {
+  color: white;
+  font-size: 18px;
+  font-weight: 600;
+  padding: 0 20px 20px;
+}
+
+.sidebar-link {
+  color: #b0b0c0;
+  text-decoration: none;
+  padding: 12px 20px;
+  font-size: 14px;
+  border-left: 3px solid transparent;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sidebar-link:hover {
+  background: rgba(255,255,255,0.05);
+  color: white;
+}
+
+.sidebar-link.active {
+  background: rgba(102,126,234,0.15);
+  color: white;
+  border-left-color: #667eea;
+}
+
+.main-column {
+  flex: 1;
+  min-width: 0;
 }
 
 header {
@@ -28,11 +70,6 @@ header {
   display: flex;
   align-items: center;
   gap: 15px;
-}
-
-header h1 {
-  font-size: 24px;
-  font-weight: 600;
 }
 
 .status-badge {
@@ -203,18 +240,133 @@ main {
   color: #333;
 }
 
-.ai-container {
+.detail-section {
   background: white;
   padding: 20px;
   border-radius: 8px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  margin-bottom: 30px;
+  margin-bottom: 20px;
 }
 
-.ai-container h2 {
-  margin-bottom: 15px;
+.detail-section h2 {
+  margin-bottom: 6px;
   font-size: 18px;
   color: #333;
+}
+
+.detail-section h3 {
+  margin: 16px 0 8px;
+  font-size: 15px;
+  color: #444;
+}
+
+.section-sub {
+  font-size: 13px;
+  color: #888;
+  margin-bottom: 16px;
+}
+
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.detail-table th {
+  text-align: left;
+  padding: 8px 10px;
+  background: #f5f5f7;
+  color: #555;
+  font-weight: 600;
+  border-bottom: 1px solid #e0e0e0;
+  white-space: nowrap;
+}
+
+.detail-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #333;
+}
+
+.detail-table tr:last-child td {
+  border-bottom: none;
+}
+
+.kv-table td:first-child {
+  color: #777;
+  width: 45%;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #eceff1;
+  color: #455a64;
+}
+
+.pill.good { background: #e8f5e9; color: #2e7d32; }
+.pill.warn { background: #fff3e0; color: #ef6c00; }
+.pill.bad  { background: #ffebee; color: #c62828; }
+
+.chat-toggle {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 24px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  z-index: 100;
+}
+
+.chat-toggle:hover {
+  background: #764ba2;
+}
+
+.chat-widget {
+  position: fixed;
+  bottom: 70px;
+  right: 20px;
+  width: 340px;
+  max-height: 480px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.chat-widget-header {
+  padding: 12px 15px;
+  background: #667eea;
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.chat-widget .chat-messages {
+  flex: 1;
+  margin-bottom: 0;
+  border-radius: 0;
+}
+
+.chat-widget .chat-input-row {
+  padding: 10px;
+  border-top: 1px solid #eee;
 }
 
 .explain-btn {
@@ -239,20 +391,52 @@ main {
   cursor: not-allowed;
 }
 
-.explanation-box {
+.chat-messages {
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 15px;
+  padding: 10px;
   background: #f5f5f5;
-  padding: 15px;
   border-radius: 4px;
-  border-left: 4px solid #667eea;
 }
 
-.explanation-box pre {
-  font-family: 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.6;
+.chat-message {
+  padding: 8px 0;
+  font-size: 14px;
+  line-height: 1.5;
   color: #333;
-  white-space: pre-wrap;
-  word-wrap: break-word;
+}
+
+.chat-message.chat-user {
+  color: #444;
+}
+
+.chat-message.chat-assistant {
+  color: #333;
+  border-left: 3px solid #667eea;
+  padding-left: 10px;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.alert-ai-explanation {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #ccc;
+  font-size: 13px;
+  color: #555;
+  font-style: italic;
 }
 
 .alerts-container {

@@ -45,8 +45,13 @@ def detect_anomalies(metrics):
     if cap_alert:
         alerts.append(cap_alert)
 
-    io_alert = check_io_anomaly(metrics.write_bytes_per_sec)
-    if io_alert:
-        alerts.append(io_alert)
+    # Write throughput is a system-wide reading (macOS has no true per-volume
+    # I/O), attached to every volume's payload. Only check it once per cycle,
+    # on the primary volume, to avoid double-counting the same sample into
+    # the baseline and firing duplicate alerts across volumes.
+    if metrics.filesystem == "/":
+        io_alert = check_io_anomaly(metrics.write_bytes_per_sec)
+        if io_alert:
+            alerts.append(io_alert)
 
     return alerts
