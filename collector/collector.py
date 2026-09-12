@@ -1,13 +1,22 @@
 import psutil
 import requests
 import json
+import os
 import platform
 import subprocess
 import time
 import plistlib
 from datetime import datetime, timezone
+from pathlib import Path
+from dotenv import load_dotenv
 
-BACKEND_URL = "http://localhost:8000"
+# The collector runs from its own directory but the .env lives at the project
+# root, so point at it explicitly rather than relying on the search path.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+# The agent stays on the Mac while the backend may run elsewhere, so this has
+# to be configurable for any deployment that isn't all-on-one-machine.
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 def get_volume_info(mountpoint):
     """Everything diskutil knows about a mounted volume, in one call."""
