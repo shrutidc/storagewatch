@@ -6,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import requests
 import time
-from typing import Optional, Tuple
 from models import Metrics, MetricsResponse, Alert
 from database import init_db, insert_metrics, get_latest_metrics, get_metrics_history, insert_alert, update_alert_explanation, get_recent_alerts, get_all_volumes_latest, save_system_info, get_system_info
 from alerts import detect_anomalies
@@ -181,9 +180,9 @@ def _is_transient(reason: str) -> bool:
     return any(m.lower() in reason.lower() for m in TRANSIENT_MARKERS)
 
 
-def call_backboard(content: str, thread_id: Optional[str], mock_reply: str,
-                   system_prompt: Optional[str] = None,
-                   attempts: int = 2) -> Tuple[str, Optional[str]]:
+def call_backboard(content: str, thread_id: str | None, mock_reply: str,
+                   system_prompt: str | None = None,
+                   attempts: int = 2) -> tuple[str, str | None]:
     """Send a message to Backboard, reusing thread_id for conversation continuity.
 
     Retries transient upstream failures. Returns (reply_text, thread_id); on

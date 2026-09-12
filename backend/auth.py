@@ -10,7 +10,6 @@ Two kinds of caller reach this API and they authenticate differently:
 
 import os
 import secrets
-from typing import Optional
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -41,7 +40,7 @@ def _unauthorized(detail: str) -> HTTPException:
 
 
 def require_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> dict:
     """Verify an Auth0 access token and return its claims."""
     if not credentials:
@@ -63,7 +62,7 @@ def require_user(
 
 
 def require_agent(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> None:
     """Authenticate the collector agent via its shared secret."""
     if not credentials:

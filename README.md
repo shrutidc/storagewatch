@@ -5,34 +5,63 @@ A macOS filesystem observability platform for monitoring AI infrastructure stora
 ## Quick Start
 
 ### Prerequisites
-- Python 3.9+
+- **Python 3.10+** (the backend uses `X | Y` type annotations, which raise
+  `TypeError` on 3.9)
 - Node.js 18+
-- Access to: Tiger Data, Auth0, Backboard API
+- macOS (the collector reads `diskutil` / `fdesetup` / `tmutil`)
+- Access to: Tiger Data, Auth0, Backboard
+
+### One-time Auth0 setup
+
+The backend verifies access tokens, which Auth0 only issues as verifiable JWTs
+when the request names a registered API. In the Auth0 dashboard:
+
+1. **Applications → APIs → Create API**, identifier exactly `storagewatch-api`,
+   signing algorithm RS256.
+2. **Applications → your SPA → Settings → Application URIs**: add
+   `http://localhost:3000` to Allowed Callback URLs, Logout URLs and Web Origins.
+
+Without step 1, Auth0 returns an opaque token and every API call returns 401.
 
 ### Setup
 
-1. **Clone and setup environment:**
+1. **Environment files** — there are two, and both are required:
    ```bash
-   cp .env.example .env
-   # Edit .env with your Tiger Data, Auth0, and Backboard credentials
+   cp .env.example .env                     # backend + collector
+   cp frontend/.env.example frontend/.env   # frontend (Vite reads VITE_* here only)
    ```
-
-2. **Backend (Python):**
+   Fill in `TIGER_DATABASE_URL`, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`,
+   `BACKBOARD_API_KEY`, and generate the collector's shared secret:
    ```bash
-   python -m venv venv
+   python3 -c "import secrets; print(secrets.token_urlsafe(32))"   # -> AGENT_TOKEN
+   ```
+   `AUTH0_AUDIENCE` and `VITE_AUTH0_AUDIENCE` must match.
+
+2. **Python dependencies:**
+   ```bash
+   python3 -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
-   cd backend && python main.py
    ```
 
-3. **Frontend (React):**
+3. **Run all three, each in its own terminal** (they are long-running):
    ```bash
-   cd frontend
-   npm install
-   npm run dev
+   cd backend   && python main.py      # :8000
+   cd frontend  && npm install && npm run dev   # :3000
+   cd collector && python collector.py
    ```
 
-Dashboard will be at `http://localhost:3000`
+Dashboard at `http://localhost:3000`.
+
+### Authentication
+
+| Caller | Credential |
+|---|---|
+| Dashboard (browser) | Auth0 access token, verified against the tenant's JWKS |
+| Collector agent | `AGENT_TOKEN` shared secret — it runs unattended with no user to sign in as |
+
+The backend refuses to start if `AUTH0_DOMAIN`, `AUTH0_AUDIENCE` or
+`AGENT_TOKEN` is missing, rather than serving telemetry unprotected.
 
 ## Architecture
 

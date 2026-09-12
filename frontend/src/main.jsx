@@ -19,16 +19,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     clientId={clientId}
     authorizationParams={{
       redirect_uri: window.location.origin,
-      scope: 'openid profile email',
       // Requesting an audience is what makes Auth0 issue a verifiable JWT
-      // instead of an opaque token, so the backend can check it. The audience
-      // must name an API registered in the tenant (Applications -> APIs) or
-      // login itself fails — hence only sending it when it's configured.
-      ...(import.meta.env.VITE_AUTH0_AUDIENCE
-        ? { audience: import.meta.env.VITE_AUTH0_AUDIENCE }
-        : {}),
+      // rather than an opaque token, which is what lets the backend check it.
+      // It must name an API registered in the tenant (Applications -> APIs).
+      audience: import.meta.env.VITE_AUTH0_AUDIENCE,
     }}
-    cacheLocation="localstorage"
   >
     <BrowserRouter>
       <Routes>
