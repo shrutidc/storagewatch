@@ -17,8 +17,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <Auth0Provider
     domain={domain}
     clientId={clientId}
-    redirectUri={window.location.origin}
-    audience={import.meta.env.VITE_AUTH0_AUDIENCE}
+    authorizationParams={{
+      redirect_uri: window.location.origin,
+      scope: 'openid profile email'
+    }}
+    cacheLocation="localstorage"
   >
     <BrowserRouter>
       <Routes>
