@@ -16,7 +16,9 @@ FROM python:3.12-slim
 WORKDIR /app
 
 RUN pip install --no-cache-dir --upgrade pip
-COPY requirements.txt ./
+# Backend deps only. The root requirements.txt also pulls in the collector's
+# psutil, which this image never runs and which needs a compiler to build.
+COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./backend/

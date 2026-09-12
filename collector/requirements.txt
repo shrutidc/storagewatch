@@ -1,0 +1,4 @@
+# Collector only. Runs on the monitored Mac, never in the deployed container.
+psutil==5.9.6
+requests==2.31.0
+python-dotenv==1.0.0

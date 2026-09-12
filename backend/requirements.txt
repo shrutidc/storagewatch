@@ -1,0 +1,11 @@
+# Backend only. Deliberately excludes psutil: that's the collector's, and the
+# deployed container runs only the backend. Installing it here also breaks the
+# image build, since psutil has no prebuilt wheel for every platform and the
+# slim Python image has no compiler.
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0
+requests==2.31.0
+pyjwt[crypto]==2.8.0
