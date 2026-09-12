@@ -22,9 +22,10 @@ function App() {
 
   const fetchMetrics = async () => {
     try {
-      const [current, hist] = await Promise.all([
+      const [current, hist, alertsData] = await Promise.all([
         axios.get('/api/metrics/current'),
         axios.get('/api/metrics/history?limit=100'),
+        axios.get('/api/alerts'),
       ])
       setMetrics(current.data)
 
@@ -34,6 +35,10 @@ function App() {
           read: (m.read_bytes_per_sec / 1e6).toFixed(1),
           write: (m.write_bytes_per_sec / 1e6).toFixed(1),
         })))
+      }
+
+      if (alertsData.data && Array.isArray(alertsData.data)) {
+        setAlerts(alertsData.data)
       }
     } catch (err) {
       console.error('Failed to fetch metrics:', err)
@@ -57,16 +62,25 @@ function App() {
 
     setExplaining(true)
     try {
-      const response = await axios.post('/api/ai/explain', {
+      const payload = {
         filesystem_type: metrics.filesystem_type,
         used_percent: metrics.used_percent,
-        read_bytes_per_sec: metrics.read_bytes_per_sec,
-        write_bytes_per_sec: metrics.write_bytes_per_sec,
-        anomaly_message: `Storage at ${metrics.used_percent.toFixed(1)}%`,
-      })
-      setExplanation(response.data.explanation)
+        read_throughput: metrics.read_bytes_per_sec,
+        write_throughput: metrics.write_bytes_per_sec,
+        hostname: metrics.hostname,
+      }
+
+      if (alerts.length > 0) {
+        const latestAlert = alerts[0]
+        payload.alert_type = latestAlert.alert_type
+        payload.alert_message = latestAlert.message
+        payload.alert_severity = latestAlert.severity
+      }
+
+      const response = await axios.post('/api/ai/explain', payload)
+      setExplanation(response.data.explanation || 'Analysis complete.')
     } catch (err) {
-      setExplanation(`Error: ${err.message}`)
+      setExplanation(`Unable to get AI analysis: ${err.message}`)
     } finally {
       setExplaining(false)
     }
@@ -168,7 +182,26 @@ function App() {
 
             <div className="alerts-container">
               <h2>Recent Alerts</h2>
-              {alerts.length === 0 ? <p>No alerts</p> : <ul>{alerts.map(a => <li key={a.id}>{a.message}</li>)}</ul>}
+              {alerts.length === 0 ? (
+                <p className="no-alerts">✓ No active alerts</p>
+              ) : (
+                <div className="alerts-list">
+                  {alerts.map(a => (
+                    <div key={a.id} className={`alert-item alert-${a.severity.toLowerCase()}`}>
+                      <div className="alert-header">
+                        <span className="alert-type">{a.alert_type}</span>
+                        <span className="alert-time">
+                          {new Date(a.created_at).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <p className="alert-message">{a.message}</p>
+                      {a.metric_value && (
+                        <p className="alert-value">Value: {a.metric_value.toFixed(2)}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         ) : (
