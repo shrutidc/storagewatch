@@ -56,7 +56,7 @@ def collect_metrics():
         "total_bytes": disk.total,
         "used_bytes": disk.used,
         "free_bytes": disk.free,
-        "used_percent": disk.percent,
+        "used_percent": round(disk.used / disk.total * 100, 1),
         "read_bytes_per_sec": read_bytes_per_sec,
         "write_bytes_per_sec": write_bytes_per_sec,
     }

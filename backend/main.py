@@ -1,13 +1,13 @@
-from fastapi import FastAPI
+from dotenv import load_dotenv
+load_dotenv()
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import os
-from dotenv import load_dotenv
 import requests
 from models import Metrics, MetricsResponse, Alert
 from database import init_db, insert_metrics, get_latest_metrics, get_metrics_history, insert_alert, get_recent_alerts
 from alerts import detect_anomalies
-
-load_dotenv()
 
 app = FastAPI()
 
@@ -52,18 +52,18 @@ async def post_metrics(metrics: Metrics):
 
         return {"status": "ok", "alerts": len(anomalies)}
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/metrics/current")
 async def get_current_metrics():
     """Return the most recent metrics."""
     try:
         result = get_latest_metrics()
-        if not result:
-            return {"error": "No metrics found"}, 404
-        return dict(result)
     except Exception as e:
-        return {"error": str(e)}, 500
+        raise HTTPException(status_code=500, detail=str(e))
+    if not result:
+        raise HTTPException(status_code=404, detail="No metrics found")
+    return dict(result)
 
 @app.get("/api/metrics/history")
 async def get_metrics_history_endpoint(limit: int = 100):
@@ -72,7 +72,7 @@ async def get_metrics_history_endpoint(limit: int = 100):
         results = get_metrics_history(limit)
         return [dict(r) for r in results]
     except Exception as e:
-        return {"error": str(e)}, 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/alerts")
 async def get_alerts():
@@ -81,7 +81,7 @@ async def get_alerts():
         results = get_recent_alerts(limit=10)
         return [dict(r) for r in results]
     except Exception as e:
-        return {"error": str(e)}, 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/ai/explain")
 async def explain_anomaly(data: dict):
@@ -111,8 +111,7 @@ Provide a concise technical analysis:
 3. Recommended action
 Keep response under 200 words."""
 
-        if backboard_key == "mock-key":
-            explanation = f"""Analysis for {hostname}:
+        mock_explanation = f"""Analysis for {hostname}:
 
 The system is experiencing {alert_type.lower()}.
 Storage is at {used_percent:.1f}% capacity.
@@ -130,29 +129,25 @@ Recommended actions:
 - Consider archiving older files if capacity > 80%
 
 This is a mock analysis. Connect BACKBOARD_API_KEY for AI-powered insights."""
-            return {"explanation": explanation}
+
+        if backboard_key == "mock-key":
+            return {"explanation": mock_explanation}
 
         response = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": backboard_key,
-                "anthropic-version": "2023-06-01",
-            },
-            json={
-                "model": "claude-3-sonnet-20240229",
-                "max_tokens": 500,
-                "messages": [
-                    {"role": "user", "content": prompt}
-                ]
-            },
+            "https://app.backboard.io/api/threads/messages",
+            headers={"X-API-Key": backboard_key},
+            json={"content": prompt, "stream": False},
             timeout=10
         )
 
         if response.status_code == 200:
             result = response.json()
-            explanation = result.get("content", [{}])[0].get("text", "Analysis unavailable")
+            if result.get("status") == "COMPLETED":
+                explanation = result.get("content") or mock_explanation
+            else:
+                explanation = mock_explanation
         else:
-            explanation = f"API error: {response.status_code}"
+            explanation = mock_explanation
 
         return {"explanation": explanation}
 

@@ -3,11 +3,9 @@ from psycopg2.extras import RealDictCursor
 import os
 from datetime import datetime
 
-DATABASE_URL = os.getenv("TIGER_DATABASE_URL")
-
 def get_connection():
     """Get a connection to Tiger Data."""
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg2.connect(os.getenv("TIGER_DATABASE_URL"))
 
 def init_db():
     """Initialize database schema. Run once on startup."""
