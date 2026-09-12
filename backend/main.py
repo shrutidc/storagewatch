@@ -3,9 +3,12 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import os
 import requests
 import time
+from pathlib import Path
 from models import Metrics, MetricsResponse, Alert
 from database import init_db, insert_metrics, get_latest_metrics, get_metrics_history, insert_alert, update_alert_explanation, get_recent_alerts, get_all_volumes_latest, save_system_info, get_system_info
 from alerts import detect_anomalies
@@ -368,6 +371,32 @@ async def ai_chat(data: dict):
     )
     return {"message": reply, "thread_id": new_thread_id}
 
+# Serve the built dashboard from this same app, so the browser talks to one
+# origin and /api calls need no CORS or proxy. Vite's dev proxy only exists
+# under `npm run dev`, so a production build has to be served this way.
+# Declared last: FastAPI matches routes in order, and the catch-all below
+# would otherwise shadow every API route.
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+if FRONTEND_DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_dashboard(full_path: str):
+        """Hand every non-API path to the SPA so client-side routes work on reload."""
+        # Without this an unknown /api/... path would render the dashboard HTML
+        # instead of returning a 404, which is confusing to debug against.
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+
+        requested = FRONTEND_DIST / full_path
+        if full_path and requested.is_file():
+            return FileResponse(requested)
+        return FileResponse(FRONTEND_DIST / "index.html")
+else:
+    print(f"No frontend build at {FRONTEND_DIST} — run `npm run build` in frontend/ "
+          f"to serve the dashboard from this app.")
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))

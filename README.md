@@ -53,6 +53,21 @@ Without step 1, Auth0 returns an opaque token and every API call returns 401.
 
 Dashboard at `http://localhost:3000`.
 
+### Production build
+
+For deployment the backend serves the built dashboard itself, so the browser
+talks to a single origin and `/api` needs no CORS or proxy (Vite's dev proxy
+only exists under `npm run dev`):
+
+```bash
+cd frontend && npm run build     # -> frontend/dist
+cd ../backend && python main.py  # serves the dashboard and the API on one port
+```
+
+The whole app is then on `:8000`. The host's `PORT` variable is honoured if set.
+The collector still runs on the monitored Mac, with `BACKEND_URL` pointing at
+the public URL.
+
 ### Authentication
 
 | Caller | Credential |
