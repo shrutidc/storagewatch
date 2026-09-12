@@ -1,0 +1,26 @@
+# Render Blueprint. Deploys the API and the dashboard as one service, so the
+# browser talks to a single origin and /api needs no CORS.
+#
+# Secrets are marked sync:false — Render prompts for them on first deploy and
+# stores them itself rather than having them committed here.
+services:
+  - type: web
+    name: storagewatch
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: TIGER_DATABASE_URL
+        sync: false
+      - key: BACKBOARD_API_KEY
+        sync: false
+      # Shared secret the collector presents. Must match AGENT_TOKEN in the
+      # .env on the monitored Mac.
+      - key: AGENT_TOKEN
+        sync: false
+      - key: AUTH0_DOMAIN
+        value: dev-q6slqq3gylewwmzs.us.auth0.com
+      # Must match VITE_AUTH0_AUDIENCE baked into the frontend build.
+      - key: AUTH0_AUDIENCE
+        value: storagewatch-api

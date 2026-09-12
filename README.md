@@ -78,6 +78,30 @@ The whole app is then on `:8000`. The host's `PORT` variable is honoured if set.
 The collector still runs on the monitored Mac, with `BACKEND_URL` pointing at
 the public URL.
 
+### Deploying to Render
+
+`render.yaml` deploys the API and dashboard as one Docker service. The image is
+built in two stages because the app needs both toolchains — Node for the
+dashboard, Python to serve it — and Render's native Python runtime has no Node.
+
+1. Render dashboard → **New → Blueprint** → pick this repo. It reads
+   `render.yaml` and prompts for the secrets marked `sync: false`:
+   `TIGER_DATABASE_URL`, `BACKBOARD_API_KEY`, `AGENT_TOKEN`.
+2. After the first deploy, add the custom domain under **Settings → Custom
+   Domains** and create the DNS record it gives you at your registrar.
+3. In Auth0, add `https://storagewatch.tech` to Allowed Callback URLs, Logout
+   URLs and Web Origins.
+4. On the monitored Mac, set `BACKEND_URL=https://storagewatch.tech` in `.env`
+   and restart the collector.
+
+The frontend's Auth0 settings come from the committed
+`frontend/.env.production`, since Vite inlines `VITE_*` at build time and those
+three values are public to the browser regardless. The Auth0 **client secret is
+not among them** and must never be — the browser never sees it.
+
+Note: Render's free tier sleeps after ~15 minutes idle, but the collector posts
+every 5 seconds, which keeps the service awake as long as the Mac is running.
+
 ### Authentication
 
 | Caller | Credential |
