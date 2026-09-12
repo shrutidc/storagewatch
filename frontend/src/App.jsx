@@ -1,6 +1,7 @@
 import { useAuth0 } from '@auth0/auth0-react'
 import { useState, useEffect } from 'react'
 import axios from 'axios'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import './App.css'
 
 function App() {
@@ -8,6 +9,8 @@ function App() {
   const [metrics, setMetrics] = useState(null)
   const [history, setHistory] = useState([])
   const [alerts, setAlerts] = useState([])
+  const [explaining, setExplaining] = useState(false)
+  const [explanation, setExplanation] = useState(null)
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -24,19 +27,61 @@ function App() {
         axios.get('/api/metrics/history?limit=100'),
       ])
       setMetrics(current.data)
-      setHistory(hist.data)
+
+      if (hist.data && Array.isArray(hist.data)) {
+        setHistory(hist.data.map(m => ({
+          time: new Date(m.time).toLocaleTimeString(),
+          read: (m.read_bytes_per_sec / 1e6).toFixed(1),
+          write: (m.write_bytes_per_sec / 1e6).toFixed(1),
+        })))
+      }
     } catch (err) {
       console.error('Failed to fetch metrics:', err)
     }
   }
 
-  if (isLoading) return <div>Loading...</div>
+  const getSystemStatus = () => {
+    if (!metrics) return 'Unknown'
+    if (metrics.used_percent >= 90) return 'Critical'
+    if (metrics.used_percent >= 80) return 'Warning'
+    return 'Healthy'
+  }
+
+  const getStatusColor = () => {
+    const status = getSystemStatus()
+    return status === 'Critical' ? '#d32f2f' : status === 'Warning' ? '#f57c00' : '#388e3c'
+  }
+
+  const handleExplainAI = async () => {
+    if (!metrics) return
+
+    setExplaining(true)
+    try {
+      const response = await axios.post('/api/ai/explain', {
+        filesystem_type: metrics.filesystem_type,
+        used_percent: metrics.used_percent,
+        read_bytes_per_sec: metrics.read_bytes_per_sec,
+        write_bytes_per_sec: metrics.write_bytes_per_sec,
+        anomaly_message: `Storage at ${metrics.used_percent.toFixed(1)}%`,
+      })
+      setExplanation(response.data.explanation)
+    } catch (err) {
+      setExplanation(`Error: ${err.message}`)
+    } finally {
+      setExplaining(false)
+    }
+  }
+
+  if (isLoading) return <div className="loading">Loading...</div>
 
   if (!isAuthenticated) {
     return (
       <div className="login-container">
-        <h1>StorageWatch</h1>
-        <button onClick={() => loginWithRedirect()}>Login</button>
+        <div className="login-box">
+          <h1>StorageWatch</h1>
+          <p>Monitor your macOS storage with AI-powered insights</p>
+          <button className="login-btn" onClick={() => loginWithRedirect()}>Login with Auth0</button>
+        </div>
       </div>
     )
   }
@@ -44,7 +89,14 @@ function App() {
   return (
     <div className="app">
       <header>
-        <h1>StorageWatch</h1>
+        <div className="header-left">
+          <h1>StorageWatch</h1>
+          {metrics && (
+            <div className="status-badge" style={{ backgroundColor: getStatusColor() }}>
+              {getSystemStatus()}
+            </div>
+          )}
+        </div>
         <div className="user-info">
           <span>{user.name}</span>
           <button onClick={() => logout()}>Logout</button>
@@ -52,36 +104,75 @@ function App() {
       </header>
 
       <main>
-        {metrics && (
+        {metrics ? (
           <>
             <div className="metrics-grid">
               <div className="metric-card">
-                <h3>Storage</h3>
+                <h3>Storage Usage</h3>
                 <p className="metric-value">{metrics.used_percent.toFixed(1)}%</p>
-                <p className="metric-detail">{(metrics.used_bytes / 1e9).toFixed(1)} GB / {(metrics.total_bytes / 1e9).toFixed(1)} GB</p>
+                <div className="progress-bar">
+                  <div className="progress-fill" style={{ width: `${metrics.used_percent}%` }}></div>
+                </div>
+                <p className="metric-detail">
+                  {(metrics.used_bytes / 1e9).toFixed(1)} GB / {(metrics.total_bytes / 1e9).toFixed(1)} GB
+                </p>
               </div>
 
               <div className="metric-card">
                 <h3>Read Throughput</h3>
-                <p className="metric-value">{(metrics.read_bytes_per_sec / 1e6).toFixed(0)} MB/s</p>
+                <p className="metric-value">{(metrics.read_bytes_per_sec / 1e6).toFixed(0)}</p>
+                <p className="metric-unit">MB/s</p>
               </div>
 
               <div className="metric-card">
                 <h3>Write Throughput</h3>
-                <p className="metric-value">{(metrics.write_bytes_per_sec / 1e6).toFixed(0)} MB/s</p>
+                <p className="metric-value">{(metrics.write_bytes_per_sec / 1e6).toFixed(0)}</p>
+                <p className="metric-unit">MB/s</p>
               </div>
             </div>
 
             <div className="chart-container">
-              <h2>Performance Graph</h2>
-              {/* Recharts will go here */}
+              <h2>Performance Graph (Last 100 samples)</h2>
+              {history.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={history}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="time" />
+                    <YAxis label={{ value: 'MB/s', angle: -90, position: 'insideLeft' }} />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="read" stroke="#8884d8" name="Read" dot={false} />
+                    <Line type="monotone" dataKey="write" stroke="#82ca9d" name="Write" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <p>Loading chart data...</p>
+              )}
+            </div>
+
+            <div className="ai-container">
+              <h2>AI Analysis</h2>
+              <button
+                className="explain-btn"
+                onClick={handleExplainAI}
+                disabled={explaining}
+              >
+                {explaining ? 'Loading...' : 'Explain with AI'}
+              </button>
+              {explanation && (
+                <div className="explanation-box">
+                  <pre>{explanation}</pre>
+                </div>
+              )}
             </div>
 
             <div className="alerts-container">
-              <h2>Alerts</h2>
-              {alerts.length === 0 ? <p>No alerts</p> : <ul>{/* Alert list */}</ul>}
+              <h2>Recent Alerts</h2>
+              {alerts.length === 0 ? <p>No alerts</p> : <ul>{alerts.map(a => <li key={a.id}>{a.message}</li>)}</ul>}
             </div>
           </>
+        ) : (
+          <p className="no-data">No metrics available yet. Backend may be starting up...</p>
         )}
       </main>
     </div>
