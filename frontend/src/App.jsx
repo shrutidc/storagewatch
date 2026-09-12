@@ -5,13 +5,15 @@ import axios from 'axios'
 import './App.css'
 
 function App() {
-  const { loginWithRedirect, logout, user, isAuthenticated, isLoading } = useAuth0()
+  const { loginWithRedirect, logout, user, isAuthenticated, isLoading,
+          getAccessTokenSilently } = useAuth0()
   const [metrics, setMetrics] = useState(null)
   const [history, setHistory] = useState([])
   const [alerts, setAlerts] = useState([])
   const [volumes, setVolumes] = useState([])
   const [systemInfo, setSystemInfo] = useState(null)
   const [lastRefresh, setLastRefresh] = useState(null)
+  const [authError, setAuthError] = useState(null)
 
   const [chatMessages, setChatMessages] = useState([])
   const [chatInput, setChatInput] = useState('')
@@ -27,13 +29,29 @@ function App() {
     }
   }, [isAuthenticated])
 
+  // The backend verifies this token, so every API call has to carry it.
+  const authConfig = async () => ({
+    headers: { Authorization: `Bearer ${await getAccessTokenSilently()}` },
+  })
+
   const fetchAll = async () => {
+    let cfg
+    try {
+      cfg = await authConfig()
+      setAuthError(null)
+    } catch (err) {
+      // Usually means VITE_AUTH0_AUDIENCE doesn't match a registered API in
+      // the Auth0 tenant, so no verifiable access token can be issued.
+      setAuthError(err.message || String(err))
+      return
+    }
+
     try {
       const [current, hist, alertsData, volumesData] = await Promise.all([
-        axios.get('/api/metrics/current'),
-        axios.get('/api/metrics/history?limit=100'),
-        axios.get('/api/alerts'),
-        axios.get('/api/volumes'),
+        axios.get('/api/metrics/current', cfg),
+        axios.get('/api/metrics/history?limit=100', cfg),
+        axios.get('/api/alerts', cfg),
+        axios.get('/api/volumes', cfg),
       ])
       setMetrics(current.data)
 
@@ -58,7 +76,7 @@ function App() {
       // System info (disk/APFS) refreshes slowly on the collector side (~60s)
       // and may 404 briefly on first load — don't let that break the main poll.
       try {
-        const sysInfo = await axios.get('/api/system-info')
+        const sysInfo = await axios.get('/api/system-info', cfg)
         setSystemInfo(sysInfo.data)
       } catch (err) {
         // not received yet — fine, keep previous value
@@ -95,7 +113,7 @@ function App() {
       const response = await axios.post('/api/ai/chat', {
         message: text,
         thread_id: chatThreadId,
-      })
+      }, await authConfig())
       setChatThreadId(response.data.thread_id)
       setChatMessages(prev => [...prev, { role: 'assistant', content: response.data.message }])
     } catch (err) {
@@ -149,7 +167,18 @@ function App() {
         </header>
 
         <main>
-          {metrics ? (
+          {authError ? (
+            <div className="detail-section">
+              <h2>Cannot authenticate to the API</h2>
+              <p className="section-sub">
+                Auth0 could not issue an access token for audience{' '}
+                <code>{import.meta.env.VITE_AUTH0_AUDIENCE}</code>. That audience must exist
+                under Applications &rarr; APIs in the Auth0 dashboard, otherwise the token
+                is opaque and the backend cannot verify it.
+              </p>
+              <p className="alert-ai-explanation">{authError}</p>
+            </div>
+          ) : metrics ? (
             <Outlet context={{ metrics, history, alerts, volumes, systemInfo, lastRefresh }} />
           ) : (
             <p className="no-data">No metrics available yet. Backend may be starting up...</p>

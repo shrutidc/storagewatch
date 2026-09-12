@@ -18,6 +18,11 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # to be configurable for any deployment that isn't all-on-one-machine.
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
+# The agent has no user to sign in as, so it authenticates to the backend with
+# a shared secret instead of an Auth0 token.
+AGENT_TOKEN = os.getenv("AGENT_TOKEN")
+AUTH_HEADERS = {"Authorization": f"Bearer {AGENT_TOKEN}"}
+
 def get_volume_info(mountpoint):
     """Everything diskutil knows about a mounted volume, in one call."""
     try:
@@ -272,7 +277,8 @@ def send_system_info():
         "snapshot_count": get_snapshot_count(),
     }
     try:
-        requests.post(f"{BACKEND_URL}/api/system-info", json=system_info, timeout=10)
+        requests.post(f"{BACKEND_URL}/api/system-info", json=system_info,
+                      headers=AUTH_HEADERS, timeout=10)
         print(f"✓ System info sent: {len(system_info['physical_disks'])} disk(s), FileVault {'on' if system_info['filevault_enabled'] else 'off'}")
     except Exception as e:
         print(f"✗ Error sending system info: {e}")
@@ -281,7 +287,7 @@ def send_system_info():
 def report_alert(alert_type, severity, message):
     """Report an ad-hoc alert (not tied to a specific metrics sample) for AI explanation + storage."""
     try:
-        requests.post(f"{BACKEND_URL}/api/alerts/report", json={
+        requests.post(f"{BACKEND_URL}/api/alerts/report", headers=AUTH_HEADERS, json={
             "hostname": platform.node(),
             "alert_type": alert_type,
             "severity": severity,
@@ -316,6 +322,7 @@ def send_metrics(metrics):
         response = requests.post(
             f"{BACKEND_URL}/api/metrics",
             json=metrics,
+            headers=AUTH_HEADERS,
             timeout=5
         )
         if response.status_code == 200:

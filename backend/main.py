@@ -1,9 +1,8 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
 import os
 import requests
 import time
@@ -11,6 +10,7 @@ from typing import Optional, Tuple
 from models import Metrics, MetricsResponse, Alert
 from database import init_db, insert_metrics, get_latest_metrics, get_metrics_history, insert_alert, update_alert_explanation, get_recent_alerts, get_all_volumes_latest, save_system_info, get_system_info
 from alerts import detect_anomalies
+from auth import require_user, require_agent, check_config
 
 app = FastAPI()
 
@@ -25,6 +25,7 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     """Initialize database on startup."""
+    check_config()
     try:
         init_db()
     except Exception as e:
@@ -34,7 +35,7 @@ def startup():
 async def health_check():
     return {"status": "ok"}
 
-@app.post("/api/metrics")
+@app.post("/api/metrics", dependencies=[Depends(require_agent)])
 async def post_metrics(metrics: Metrics, background_tasks: BackgroundTasks):
     """Receive telemetry from monitoring agent."""
     try:
@@ -60,7 +61,7 @@ async def post_metrics(metrics: Metrics, background_tasks: BackgroundTasks):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/metrics/current")
+@app.get("/api/metrics/current", dependencies=[Depends(require_user)])
 async def get_current_metrics(filesystem: str = "/"):
     """Return the most recent metrics for a given volume (default: boot volume)."""
     try:
@@ -71,7 +72,7 @@ async def get_current_metrics(filesystem: str = "/"):
         raise HTTPException(status_code=404, detail="No metrics found")
     return dict(result)
 
-@app.get("/api/metrics/history")
+@app.get("/api/metrics/history", dependencies=[Depends(require_user)])
 async def get_metrics_history_endpoint(limit: int = 100, filesystem: str = "/"):
     """Return historical metrics (last N records) for a given volume."""
     try:
@@ -80,7 +81,7 @@ async def get_metrics_history_endpoint(limit: int = 100, filesystem: str = "/"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/volumes")
+@app.get("/api/volumes", dependencies=[Depends(require_user)])
 async def get_volumes():
     """Return the latest metrics for every monitored volume."""
     try:
@@ -89,7 +90,7 @@ async def get_volumes():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/alerts")
+@app.get("/api/alerts", dependencies=[Depends(require_user)])
 async def get_alerts():
     """Return recent alerts."""
     try:
@@ -98,7 +99,7 @@ async def get_alerts():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/system-info")
+@app.post("/api/system-info", dependencies=[Depends(require_agent)])
 async def post_system_info(data: dict):
     """Receive disk/APFS system info from the collector (runs on the Mac, not here)."""
     try:
@@ -107,7 +108,7 @@ async def post_system_info(data: dict):
         raise HTTPException(status_code=500, detail=str(e))
     return {"status": "ok"}
 
-@app.get("/api/system-info")
+@app.get("/api/system-info", dependencies=[Depends(require_user)])
 async def get_system_info_endpoint():
     """Return the latest disk/APFS system info."""
     try:
@@ -118,7 +119,7 @@ async def get_system_info_endpoint():
         raise HTTPException(status_code=404, detail="No system info received yet")
     return info
 
-@app.post("/api/alerts/report")
+@app.post("/api/alerts/report", dependencies=[Depends(require_agent)])
 async def report_alert(data: dict, background_tasks: BackgroundTasks):
     """Receive an ad-hoc alert from the collector (e.g. disk health, volume disappeared)
     that isn't tied to a specific metrics sample, and generate its AI explanation."""
@@ -348,7 +349,7 @@ def build_live_context() -> str:
     return "\n".join(lines)
 
 
-@app.post("/api/ai/chat")
+@app.post("/api/ai/chat", dependencies=[Depends(require_user)])
 async def ai_chat(data: dict):
     """Conversational follow-up chat with the AI, using Backboard thread continuity."""
     message = data.get("message", "")
@@ -367,30 +368,6 @@ async def ai_chat(data: dict):
         message, thread_id, mock_reply, system_prompt=build_live_context()
     )
     return {"message": reply, "thread_id": new_thread_id}
-
-@app.post("/api/tts")
-async def text_to_speech(data: dict):
-    """Convert text to speech using ElevenLabs."""
-    text = data.get("text", "")
-    if not text:
-        raise HTTPException(status_code=400, detail="No text provided")
-
-    api_key = os.getenv("ELEVENLABS_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY not configured")
-
-    voice_id = "TWutjvRaJqAX89preB4e"  # added to account's own voice library (required for free-tier API access)
-    response = requests.post(
-        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
-        headers={"xi-api-key": api_key, "Content-Type": "application/json"},
-        json={"text": text, "model_id": "eleven_flash_v2_5"},
-        timeout=30
-    )
-
-    if response.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"ElevenLabs error: {response.status_code}")
-
-    return Response(content=response.content, media_type="audio/mpeg")
 
 if __name__ == "__main__":
     import uvicorn
