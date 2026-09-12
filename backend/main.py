@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional
 import os
 from dotenv import load_dotenv
+from models import Metrics, MetricsResponse, Alert
+from database import init_db
 
 load_dotenv()
 
@@ -17,32 +17,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class Metrics(BaseModel):
-    timestamp: str
-    hostname: str
-    filesystem: str
-    filesystem_type: str
-    total_bytes: int
-    used_bytes: int
-    free_bytes: int
-    used_percent: float
-    read_bytes_per_sec: int
-    write_bytes_per_sec: int
+@app.on_event("startup")
+def startup():
+    """Initialize database on startup."""
+    init_db()
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
 
 @app.post("/api/metrics")
 async def post_metrics(metrics: Metrics):
+    """Receive telemetry from monitoring agent."""
     pass
 
 @app.get("/api/metrics/current")
 async def get_current_metrics():
+    """Return the most recent metrics."""
     pass
 
 @app.get("/api/metrics/history")
 async def get_metrics_history(limit: int = 100):
+    """Return historical metrics (last N records)."""
+    pass
+
+@app.get("/api/alerts")
+async def get_alerts():
+    """Return recent alerts."""
     pass
 
 @app.post("/api/ai/explain")
 async def explain_anomaly(data: dict):
+    """Send anomaly to Backboard for AI explanation."""
     pass
 
 if __name__ == "__main__":
