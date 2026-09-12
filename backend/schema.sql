@@ -42,6 +42,15 @@ CREATE TABLE IF NOT EXISTS alerts (
 
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ai_explanation TEXT;
 
+-- Latest disk/APFS status snapshot from the collector. A point-in-time status
+-- rather than a metric history, so it's a single upserted row instead of a
+-- hypertable — but it lives in the DB so it survives a backend restart.
+CREATE TABLE IF NOT EXISTS system_info (
+    id INTEGER PRIMARY KEY,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    data JSONB NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_alerts_hostname_created
     ON alerts (hostname, created_at DESC);
 

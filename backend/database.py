@@ -1,5 +1,6 @@
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import json
 import os
 from datetime import datetime
 
@@ -130,6 +131,34 @@ def update_alert_explanation(alert_id, ai_explanation):
     conn.commit()
     cursor.close()
     conn.close()
+
+def save_system_info(data):
+    """Upsert the collector's latest disk/APFS snapshot."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO system_info (id, updated_at, data)
+        VALUES (1, NOW(), %s)
+        ON CONFLICT (id) DO UPDATE SET updated_at = NOW(), data = EXCLUDED.data
+    """, (json.dumps(data),))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def get_system_info():
+    """Return the latest disk/APFS snapshot, or None if the collector hasn't sent one."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT data FROM system_info WHERE id = 1")
+    row = cursor.fetchone()
+
+    cursor.close()
+    conn.close()
+
+    return row[0] if row else None
 
 def get_recent_alerts(limit=10):
     """Get recent unresolved alerts."""
