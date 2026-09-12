@@ -38,7 +38,9 @@ function App() {
       setMetrics(current.data)
 
       if (hist.data && Array.isArray(hist.data)) {
-        setHistory(hist.data.map(m => ({
+        // API returns newest-first; charts need oldest-first so time reads
+        // left-to-right.
+        setHistory(hist.data.slice().reverse().map(m => ({
           time: new Date(m.time).toLocaleTimeString(),
           read: (m.read_bytes_per_sec / 1e6).toFixed(1),
           write: (m.write_bytes_per_sec / 1e6).toFixed(1),

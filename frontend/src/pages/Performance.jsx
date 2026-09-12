@@ -5,9 +5,8 @@ const tb = (bytes) => bytes >= 1e12 ? `${(bytes / 1e12).toFixed(2)} TB` : `${(by
 
 function stats(values) {
   if (!values.length) return { current: 0, avg: 0, peak: 0 }
-  // history arrives newest-first from the API
   return {
-    current: values[0],
+    current: values[values.length - 1],  // history is oldest-first
     avg: values.reduce((a, b) => a + b, 0) / values.length,
     peak: Math.max(...values),
   }

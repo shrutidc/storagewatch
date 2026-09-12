@@ -19,7 +19,10 @@ function Apfs() {
     <>
       <div className="detail-section">
         <h2>APFS Overview</h2>
-        <p className="section-sub">Reported by <code>diskutil apfs list</code> on {systemInfo.hostname}</p>
+        <p className="section-sub">
+          Reported by <code>diskutil apfs list</code> on {systemInfo.hostname} ·
+          {' '}macOS-internal containers (iSCPreboot, bare Recovery) are omitted
+        </p>
         <div className="metrics-grid">
           <div className="metric-card">
             <h3>Containers</h3>

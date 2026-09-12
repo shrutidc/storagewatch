@@ -9,19 +9,26 @@ from datetime import datetime, timezone
 
 BACKEND_URL = "http://localhost:8000"
 
-def get_filesystem_type(mountpoint):
+def get_volume_info(mountpoint):
+    """Everything diskutil knows about a mounted volume, in one call."""
     try:
-        result = subprocess.run(
-            ["diskutil", "info", mountpoint],
-            capture_output=True,
-            text=True
-        )
-        for line in result.stdout.split("\n"):
-            if "File System Personality" in line:
-                return line.split(":")[-1].strip()
+        out = subprocess.run(
+            ["diskutil", "info", "-plist", mountpoint], capture_output=True
+        ).stdout
+        d = plistlib.loads(out)
     except Exception as e:
-        print(f"Error detecting filesystem for {mountpoint}: {e}")
-    return "Unknown"
+        print(f"Error reading volume info for {mountpoint}: {e}")
+        return {}
+
+    return {
+        "volume_name": d.get("VolumeName", mountpoint),
+        "fs_type": d.get("FilesystemName") or d.get("FilesystemType", "Unknown"),
+        "writable": bool(d.get("WritableVolume", False)),
+        "container_ref": d.get("APFSContainerReference"),
+        "container_size": d.get("APFSContainerSize"),
+        "container_free": d.get("APFSContainerFree"),
+        "volume_used": d.get("CapacityInUse"),
+    }
 
 def get_monitored_volumes():
     """Real, user-relevant volumes: the boot volume and anything mounted under /Volumes.
@@ -66,21 +73,37 @@ def collect_metrics():
 
     all_metrics = []
     for mountpoint in get_monitored_volumes():
-        try:
-            disk = psutil.disk_usage(mountpoint)
-        except Exception as e:
-            print(f"Error reading usage for {mountpoint}: {e}")
+        info = get_volume_info(mountpoint)
+
+        # On APFS, every volume in a container shares one free-space pool, so
+        # psutil's per-volume used/free don't add up to its total (on a modern
+        # Mac "/" is a read-only system snapshot holding only ~12GB while user
+        # data lives on a sibling volume). Report the container's numbers —
+        # that's the real capacity constraint, and what macOS itself reports.
+        if info.get("container_size") and info.get("container_free") is not None:
+            total = info["container_size"]
+            free = info["container_free"]
+            used = total - free
+        else:
+            try:
+                disk = psutil.disk_usage(mountpoint)
+            except Exception as e:
+                print(f"Error reading usage for {mountpoint}: {e}")
+                continue
+            total, used, free = disk.total, disk.used, disk.free
+
+        if not total:
             continue
 
         all_metrics.append({
             "timestamp": timestamp,
             "hostname": hostname,
             "filesystem": mountpoint,
-            "filesystem_type": get_filesystem_type(mountpoint),
-            "total_bytes": disk.total,
-            "used_bytes": disk.used,
-            "free_bytes": disk.free,
-            "used_percent": round(disk.used / disk.total * 100, 1),
+            "filesystem_type": info.get("fs_type", "Unknown"),
+            "total_bytes": total,
+            "used_bytes": used,
+            "free_bytes": free,
+            "used_percent": round(used / total * 100, 1),
             "read_bytes_per_sec": read_bytes_per_sec,
             "write_bytes_per_sec": write_bytes_per_sec,
         })
@@ -201,22 +224,18 @@ def get_volume_properties():
         if p.mountpoint != "/" and not p.mountpoint.startswith("/Volumes/"):
             continue
         opts = p.opts.split(",")
+        info = get_volume_info(p.mountpoint)
         props.append({
             "mountpoint": p.mountpoint,
             "device": p.device,
             "fstype": p.fstype,
             "read_only": "ro" in opts,
             "is_local": "local" in opts,
-            "volume_name": get_volume_name(p.mountpoint),
+            "volume_name": info.get("volume_name", p.mountpoint),
+            "container_ref": info.get("container_ref"),
+            "volume_used_bytes": info.get("volume_used"),
         })
     return props
-
-def get_volume_name(mountpoint):
-    try:
-        out = subprocess.run(["diskutil", "info", "-plist", mountpoint], capture_output=True).stdout
-        return plistlib.loads(out).get("VolumeName", mountpoint)
-    except Exception:
-        return mountpoint
 
 def get_io_totals():
     """Cumulative bytes read/written since boot (physical-disk level)."""
