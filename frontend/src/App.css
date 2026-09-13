@@ -616,3 +616,13 @@ main {
 .growth-down { color: #2e7d32; font-weight: 600; }
 
 .over-quota { color: #c62828; font-weight: 600; }
+
+/* Nothing to show, which is neither good news nor bad — .no-alerts is green
+   because an absence of alerts is genuinely good, and borrowing it here made
+   an empty table read as a success banner. */
+.empty-state {
+  text-align: center;
+  color: #888;
+  padding: 20px;
+  font-size: 13px;
+}

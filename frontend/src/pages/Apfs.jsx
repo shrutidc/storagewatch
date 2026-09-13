@@ -50,6 +50,8 @@ function Apfs() {
         // On a sealed system volume the Mac runs from a snapshot, not from the
         // volume, which is why that volume reports no mount point of its own.
         const booted = c.volumes.find(v => v.snapshot)?.snapshot
+        // Older collectors send no mount point, seal state or snapshot at all.
+        const stale = c.volumes.some(v => !('mount_point' in v))
         return (
           <div key={c.container_reference} className="detail-section">
             <h2>Container {c.container_reference}</h2>
@@ -112,8 +114,13 @@ function Apfs() {
                             <code>{v.snapshot.mount_point}</code>
                             <span className="cell-note">via snapshot {v.snapshot.device_identifier}</span>
                           </>
-                        ) : (
+                        ) : 'mount_point' in v ? (
                           <span className="cell-note">Not mounted</span>
+                        ) : (
+                          // The collector on this machine predates mount point
+                          // reporting. It did not say the volume is unmounted —
+                          // it said nothing, and claiming otherwise would be wrong.
+                          <span className="cell-note">Not reported</span>
                         )}
                       </td>
                       <td>{v.roles.length ? v.roles.join(', ') : '—'}</td>
@@ -141,6 +148,12 @@ function Apfs() {
                 </tbody>
               </table>
             </div>
+            {stale && (
+              <p className="section-sub toggle-status">
+                Mount points, seal state and snapshots are blank because the collector on
+                this Mac predates them. Re-run the installer on that Mac to fill them in.
+              </p>
+            )}
           </div>
         )
       })}

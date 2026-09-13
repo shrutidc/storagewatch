@@ -31,7 +31,7 @@ function NetworkVolumes() {
       </p>
 
       {mounts.length === 0 ? (
-        <p className="no-alerts">
+        <p className="empty-state">
           No shared volumes mounted. NFS, SMB and AFP mounts appear here automatically.
         </p>
       ) : (
