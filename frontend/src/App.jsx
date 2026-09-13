@@ -4,13 +4,6 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import './App.css'
 
-// What each page displays, beyond the metrics and alerts the header needs on
-// every page. Nothing else is requested: each call costs the server a token
-// check and a database round-trip, twelve times a minute.
-const PAGE_DATA = {
-  '/': ['history', 'volumes', 'systemInfo'],
-}
-
 // The one-line collector installer. In development the API runs on :8000
 // rather than Vite's :3000, so the installer is pointed there explicitly.
 const API_ORIGIN = import.meta.env.DEV ? 'http://localhost:8000' : window.location.origin
@@ -44,13 +37,16 @@ function App() {
   const onSettings = location.pathname === '/settings'
   const onConnect = location.pathname === '/connect'
 
+  const hasMetrics = Boolean(metrics)
   useEffect(() => {
     if (isAuthenticated) {
       fetchPage()
-      const interval = setInterval(fetchPage, 5000)
+      // Until the first sample exists — e.g. just after connecting a Mac —
+      // check every 2 s so the dashboard fills in as soon as data lands.
+      const interval = setInterval(fetchPage, hasMetrics ? 5000 : 2000)
       return () => clearInterval(interval)
     }
-  }, [isAuthenticated, selectedHost, location.pathname])
+  }, [isAuthenticated, selectedHost, location.pathname, hasMetrics])
 
   // The machine list changes rarely, so it loads at sign-in and when Settings
   // opens rather than on every poll — the query scans the whole history.
@@ -93,53 +89,25 @@ function App() {
     const host = selectedHost
       ? { params: { hostname: selectedHost } }
       : {}
-    const scoped = { ...cfg, ...host }
-    const needs = PAGE_DATA[location.pathname] || []
-    const fetchIf = (key, url) => needs.includes(key) ? axios.get(url, scoped) : null
-
     try {
-      const [current, alertsData, hist, volumesData] = await Promise.all([
-        axios.get('/api/metrics/current', scoped),
-        axios.get('/api/alerts', scoped),
-        fetchIf('history', '/api/metrics/history?limit=100'),
-        fetchIf('volumes', '/api/volumes'),
-      ])
-      setMetrics(current.data)
-
-      if (alertsData.data && Array.isArray(alertsData.data)) {
-        setAlerts(alertsData.data)
-      }
-
-      if (hist && Array.isArray(hist.data)) {
-        // API returns newest-first; charts need oldest-first so time reads
-        // left-to-right.
-        setHistory(hist.data.slice().reverse().map(m => ({
-          time: new Date(m.time).toLocaleTimeString(),
-          // Numbers, not toFixed() strings: Recharts sizes the axis from these,
-          // and strings compare as text ("9.8" > "15.2"), clipping the line.
-          read: Math.round(m.read_bytes_per_sec / 1e5) / 10,
-          write: Math.round(m.write_bytes_per_sec / 1e5) / 10,
-        })))
-      }
-
-      if (volumesData && Array.isArray(volumesData.data)) {
-        setVolumes(volumesData.data)
-      }
-
-      if (needs.includes('systemInfo')) {
-        // System info (disk/APFS) refreshes slowly on the collector side (~60s)
-        // and may 404 briefly on first load — don't let that break the main poll.
-        try {
-          const sysInfo = await axios.get('/api/system-info', scoped)
-          setSystemInfo(sysInfo.data)
-        } catch (err) {
-          // not received yet — fine, keep previous value
-        }
-      }
-
+      // One request for everything the page shows. The server has a tenth of
+      // a CPU, so per-request overhead — not the queries — was the bottleneck.
+      const { data } = await axios.get('/api/dashboard', { ...cfg, ...host })
+      setMetrics(data.current)  // null until the first sample: shows the install step
+      setAlerts(data.alerts)
+      setVolumes(data.volumes)
+      setSystemInfo(data.system_info)
+      // Already oldest-first, so time reads left-to-right.
+      setHistory(data.history.map(m => ({
+        time: new Date(m.time).toLocaleTimeString(),
+        // Numbers, not toFixed() strings: Recharts sizes the axis from these,
+        // and strings compare as text ("9.8" > "15.2"), clipping the line.
+        read: Math.round(m.read_bytes_per_sec / 1e5) / 10,
+        write: Math.round(m.write_bytes_per_sec / 1e5) / 10,
+      })))
       setLastRefresh(new Date())
     } catch (err) {
-      console.error('Failed to fetch metrics:', err)
+      console.error('Failed to fetch dashboard:', err)
     } finally {
       setFetched(true)
     }

@@ -238,3 +238,42 @@ def get_system_info(owner_sub, hostname=None):
         ORDER BY updated_at DESC LIMIT 1
     """, (owner_sub, hostname, hostname))
     return row["data"] if row else None
+
+
+# --- dashboard -------------------------------------------------------------
+
+def get_dashboard(owner_sub, hostname=None):
+    """Everything the dashboard shows, as one JSON document built by Postgres.
+
+    One statement is one round trip, and Python only forwards the text: on the
+    free instance's tenth of a CPU, per-request and serialization overhead —
+    not the queries — were what made the dashboard slow.
+    """
+    return _one("""
+        SELECT json_build_object(
+          'current', (SELECT row_to_json(c) FROM (
+              SELECT * FROM filesystem_metrics
+              WHERE owner_sub = %(owner)s AND filesystem = '/'
+                AND (%(host)s::text IS NULL OR hostname = %(host)s)
+              ORDER BY time DESC LIMIT 1) c),
+          'history', (SELECT coalesce(json_agg(h ORDER BY h.time), '[]'::json) FROM (
+              SELECT time, read_bytes_per_sec, write_bytes_per_sec FROM filesystem_metrics
+              WHERE owner_sub = %(owner)s AND filesystem = '/'
+                AND (%(host)s::text IS NULL OR hostname = %(host)s)
+              ORDER BY time DESC LIMIT 100) h),
+          'alerts', (SELECT coalesce(json_agg(a ORDER BY a.created_at DESC), '[]'::json) FROM (
+              SELECT * FROM alerts
+              WHERE owner_sub = %(owner)s AND resolved = FALSE
+                AND (%(host)s::text IS NULL OR hostname = %(host)s)) a),
+          'volumes', (SELECT coalesce(json_agg(v), '[]'::json) FROM (
+              SELECT DISTINCT ON (filesystem) * FROM filesystem_metrics
+              WHERE owner_sub = %(owner)s
+                AND (%(host)s::text IS NULL OR hostname = %(host)s)
+                AND time > NOW() - INTERVAL '1 hour'
+              ORDER BY filesystem, time DESC) v),
+          'system_info', (SELECT data FROM system_info
+              WHERE owner_sub = %(owner)s
+                AND (%(host)s::text IS NULL OR hostname = %(host)s)
+              ORDER BY updated_at DESC LIMIT 1)
+        )::text AS doc
+    """, {"owner": owner_sub, "host": hostname})["doc"]

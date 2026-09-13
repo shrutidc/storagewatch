@@ -103,21 +103,19 @@ browser → /
   └─ Auth0Provider
        ├─ not authenticated → redirect to Auth0 → callback → tokens
        └─ authenticated
-            ├─ useEffect: fetchPage(), then setInterval(fetchPage, 5000)
-            │             re-run on page change or host change
+            ├─ useEffect: fetchPage(), then every 5 s (every 2 s until the
+            │             first sample exists); re-run on page or host change
             └─ useEffect: fetchHosts() at sign-in and when Settings opens
 
 fetchPage()
   ├─ document.hidden?                  → skip; background tabs don't poll
   ├─ getAccessTokenSilently()          → Authorization: Bearer <JWT>
-  ├─ Promise.all, all Depends(require_user):
-  │    ├─ /api/metrics/current            every page (header status + host)
-  │    ├─ /api/alerts                     every page (sidebar count)
-  │    ├─ /api/metrics/history?limit=100  reversed for display
-  │    └─ /api/volumes                    last hour, grouped per pool
-  └─ /api/system-info, own try/catch     disk + APFS sections; 404s until
-                                          the collector's first 60s cycle lands, so a
-                                          failure here must not break the main poll
+  └─ GET /api/dashboard?hostname       → Depends(require_user), then ONE SQL
+                                          statement returning JSON: current sample,
+                                          last 100 samples (oldest first), every
+                                          unresolved alert, volumes seen in the last
+                                          hour, disk/APFS snapshot (null until the
+                                          collector's first 60 s cycle)
 ```
 
 Each `require_user` call verifies the JWT against the tenant's JWKS, checking signature,

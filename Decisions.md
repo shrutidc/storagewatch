@@ -193,6 +193,22 @@ each held the event loop, so dashboard reads queued behind the collector's write
 Connections are now pooled and reused, and handlers are `def`, which FastAPI runs in
 worker threads.
 
+### The dashboard is one request, answered by one query
+
+Measured on the free Render instance (a tenth of a CPU): a request that touches the
+database twice took ~210 ms alone but ~950 ms each when ten arrived together — the CPU,
+not the database, was the queue. The dashboard made five requests every five seconds.
+`/api/dashboard` now returns everything in one response, built by a single SQL statement
+(`json_build_object`), so Postgres produces the JSON and Python only forwards it. Access
+logging is off for the same reason. A paid instance is the bigger lever still.
+
+### Ask AI tries the fast models first
+
+Flash-lite models answered in ~2 s; the larger Gemini "thinking" models take several and
+were often out of free-tier quota, so each question first waited on their failures. Lite
+models now go first, a daily quota or a retired model is skipped for hours, and the
+`gemini-2.5-*` models — still listed by Backboard, but NOT_FOUND — are gone.
+
 ### Chart values are numbers
 
 History was mapped with `toFixed(1)`, which returns strings. Recharts took the axis
@@ -203,8 +219,8 @@ out at 12 while the read line ran off the chart.
 
 A 429 from the free tier is a daily per-model quota (20 requests), not congestion. It
 was treated as transient, so every request retried every exhausted model and then
-reported "high demand". A model that returns a quota error is now skipped for ten
-minutes, the list covers more models (each has its own quota), and when all are
+reported "high demand". A model that returns a quota error is now skipped (for
+hours when the quota is daily), the list covers more models (each has its own quota), and when all are
 exhausted the message says so.
 
 ---

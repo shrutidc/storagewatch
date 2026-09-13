@@ -4,7 +4,7 @@ load_dotenv()
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 import os
 import requests
 import time
@@ -13,7 +13,7 @@ from models import Metrics, MetricsResponse, Alert
 from database import (init_db, insert_metrics, get_latest_metrics, get_metrics_history,
                       insert_alert, has_recent_alert, get_recent_alerts,
                       get_all_volumes_latest, save_system_info, get_system_info,
-                      get_hosts, create_agent_token, list_agent_tokens)
+                      get_hosts, create_agent_token, list_agent_tokens, get_dashboard)
 from alerts import detect_anomalies
 from auth import require_user, require_agent, check_config
 
@@ -135,6 +135,21 @@ def get_system_info_endpoint(hostname: str | None = None,
         raise HTTPException(status_code=404, detail="No system info received yet")
     return info
 
+@app.get("/api/dashboard")
+def get_dashboard_endpoint(hostname: str | None = None,
+                           user: dict = Depends(require_user)):
+    """Everything the dashboard shows, in one response from one query.
+
+    On the free instance's tenth of a CPU, five requests per poll queued behind
+    each other (~950 ms each when ten arrived together). One request, with the
+    JSON built by Postgres rather than Python, avoids that.
+    """
+    try:
+        doc = get_dashboard(user["sub"], hostname)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return Response(content=doc, media_type="application/json")
+
 @app.get("/api/hosts")
 def get_hosts_endpoint(user: dict = Depends(require_user)):
     """Machines reporting for the signed-in user, most recently seen first."""
@@ -203,12 +218,14 @@ def report_alert(data: dict, owner_sub: str = Depends(require_agent)):
 # demand") or retired by Google (404 NOT_FOUND) while its siblings answer
 # fine, so pinning exactly one model makes the assistant fail for reasons
 # that have nothing to do with this app. The free tier's quota is also per
-# model, so a longer list is more requests per day. Refresh the list from
-# GET https://app.backboard.io/api/models?provider=google
+# model, so a longer list is more requests per day. Flash-lite models come
+# first: they answered in ~2 s where the larger "thinking" models take several,
+# and a dashboard chat needs the quick answer. Refresh the list from
+# GET https://app.backboard.io/api/models?provider=google — it still lists
+# gemini-2.5-* models that now return NOT_FOUND.
 LLM_PROVIDER = "google"
-LLM_MODELS = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash",
-              "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
-              "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+LLM_MODELS = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite",
+              "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.8-flash"]
 
 
 # Gemini regularly returns 503 "high demand" for a single call and then succeeds
@@ -217,10 +234,10 @@ TRANSIENT_MARKERS = ("503", "UNAVAILABLE", "high demand", "overloaded", "try aga
 
 # A 429 is a quota, not congestion: the free tier allows 20 requests per model
 # per day. Retrying that model is pointless, but its siblings have their own
-# quotas, so it is skipped for a while and they answer instead — without every
-# request first walking through the exhausted models.
+# quotas, so it is skipped and they answer instead — without every request
+# first walking through the exhausted models. A daily quota or a retired model
+# is skipped for hours, a per-minute quota for a minute.
 QUOTA_MARKERS = ("429", "RESOURCE_EXHAUSTED", "quota")
-QUOTA_BACKOFF_SECONDS = 600
 _quota_blocked_until: dict[str, float] = {}
 
 
@@ -282,8 +299,9 @@ def call_backboard(content: str, thread_id: str | None, mock_reply: str,
                     reason = f"HTTP {response.status_code}: {response.text[:200]}"
 
             print(f"[backboard] {model} failed: {reason[:300]}")
-            if _is_quota(reason):
-                _quota_blocked_until[model] = time.time() + QUOTA_BACKOFF_SECONDS
+            if _is_quota(reason) or "NOT_FOUND" in reason:
+                lasting = "PerDay" in reason or "NOT_FOUND" in reason
+                _quota_blocked_until[model] = time.time() + (6 * 3600 if lasting else 60)
                 continue
             # A non-transient failure (e.g. billing) will hit every model
             # identically, so stop rather than hammering the whole list.
@@ -443,4 +461,6 @@ else:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    # No access log: every dashboard poll and collector report would write a
+    # line, which is CPU the free instance doesn't have to spare.
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)), access_log=False)

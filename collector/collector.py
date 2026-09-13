@@ -414,11 +414,15 @@ def enroll_via_browser():
 
 def main():
     """Run collector loop."""
-    global AUTH_HEADERS
+    global AUTH_HEADERS, previous_counters, previous_time
     print(f"Starting StorageWatch collector...")
     print(f"Backend: {BACKEND_URL}")
     AUTH_HEADERS = {"Authorization": f"Bearer {load_or_enroll_token()}"}
     print(f"Sampling every 5 seconds...\n")
+    # A rate needs two readings. Take the first now so the very first report —
+    # the one a newly connected dashboard shows — carries real throughput, not 0.
+    previous_counters, previous_time = psutil.disk_io_counters(), time.time()
+    time.sleep(1)
 
     cycle = 0
     while True:

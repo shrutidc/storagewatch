@@ -162,6 +162,7 @@ also serves the dashboard's static files on unmatched paths — see above.)
 | POST | `/api/alerts/report` | agent | Agent-side alert submission |
 | POST | `/api/system-info` | agent | Store physical disk / APFS container inventory |
 | GET | `/api/system-info` | user | Read that inventory |
+| GET | `/api/dashboard` | user | Everything the dashboard shows, in one response built by one SQL query |
 | GET | `/api/hosts` | user | The caller's reporting machines, most recent first |
 | GET | `/api/agent-tokens` | user | Metadata for the caller's agent tokens |
 | POST | `/api/agent-tokens` | user | Mint an agent token; called by the Connect page (plaintext returned once) |
