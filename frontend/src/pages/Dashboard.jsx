@@ -51,9 +51,11 @@ function Dashboard() {
       <Performance />
       <Apfs />
       <Volumes />
-      <NetworkVolumes />
       <Disks />
       <Users />
+      {/* Last: most Macs have no shared volumes, so an empty panel should not
+          sit between sections that always have something to show. */}
+      <NetworkVolumes />
     </>
   )
 }

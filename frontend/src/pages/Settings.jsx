@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import axios from 'axios'
 import InstallCommand from '../InstallCommand.jsx'
 import MenuBarSetting from '../MenuBarSetting.jsx'
+import ThemeSetting from '../ThemeSetting.jsx'
 
 function Settings() {
   const { hosts, authConfig, installCommand } = useOutletContext()
@@ -76,6 +77,7 @@ function Settings() {
       </div>
 
       <MenuBarSetting />
+      <ThemeSetting />
     </>
   )
 }

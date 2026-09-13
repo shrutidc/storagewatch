@@ -6,6 +6,10 @@ import App from './App.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Settings from './pages/Settings.jsx'
 import Connect from './pages/Connect.jsx'
+import { initTheme } from './theme.js'
+
+// Before render: mounting first would flash a light page on a dark-mode Mac.
+initTheme()
 
 const domain = import.meta.env.VITE_AUTH0_DOMAIN
 const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID

@@ -1,3 +1,100 @@
+/* Theme tokens. Light values are the colours this stylesheet has always used,
+   so light mode renders exactly as before; the dark block below re-points the
+   same names. Anything added later should use a token rather than a literal,
+   otherwise it will look correct in one theme and wrong in the other. */
+:root {
+  --bg: #f5f5f5;
+  --bg-subtle: #f5f5f7;
+  --surface: #ffffff;
+  --surface-alt: #f9f9f9;
+  --surface-muted: #f0f0f0;
+  --border-faint: #eee;
+  --border: #e0e0e0;
+  --border-strong: #ddd;
+  --border-input: #ccc;
+  --text: #333;
+  --text-2: #444;
+  --text-3: #555;
+  --text-muted: #666;
+  --text-muted-2: #777;
+  --text-dim: #888;
+  --text-dimmer: #999;
+  --on-accent: #ffffff;
+  --accent: #667eea;
+  --accent-2: #764ba2;
+  --accent-soft: rgba(102,126,234,0.15);
+  --hover-veil: rgba(255,255,255,0.05);
+  --ok-text: #2e7d32;
+  --ok-text-2: #388e3c;
+  --ok-bg: #e8f5e9;
+  --bad-text: #c62828;
+  --bad-text-2: #d32f2f;
+  --bad-bg: #ffebee;
+  --warn-text: #ef6c00;
+  --warn-text-2: #f57c00;
+  --warn-bg: #fff3e0;
+  --info-text: #1976d2;
+  --info-bg: #e3f2fd;
+  --neutral-text: #455a64;
+  --neutral-bg: #eceff1;
+  /* The command box is a terminal in both themes — it is showing terminal
+     output, and inverting it would stop it reading as one. */
+  --terminal-bg: #1e1e2e;
+  --terminal-fg: #9ece6a;
+  --text-terminal-dim: #b0b0c0;
+  --shadow: rgba(0,0,0,0.1);
+  --shadow-2: rgba(0,0,0,0.15);
+  --shadow-3: rgba(0,0,0,0.2);
+  --shadow-4: rgba(0,0,0,0.25);
+  color-scheme: light;
+}
+
+/* Dark is not the light palette inverted: surfaces lift as they come forward
+   rather than darkening, text stops at #e6e6e6 so it doesn't glare, and the
+   status colours are lightened for contrast against a dark fill while their
+   tinted backgrounds become low-opacity washes. */
+[data-theme="dark"] {
+  --bg: #15161a;
+  --bg-subtle: #1c1e24;
+  --surface: #1e2027;
+  --surface-alt: #23262e;
+  --surface-muted: #2a2d36;
+  --border-faint: #2a2d36;
+  --border: #32363f;
+  --border-strong: #3c414c;
+  --border-input: #454b57;
+  --text: #e6e6e6;
+  --text-2: #dcdcdc;
+  --text-3: #c9c9c9;
+  --text-muted: #a8adb8;
+  --text-muted-2: #9aa0ab;
+  --text-dim: #8b909b;
+  --text-dimmer: #7c818c;
+  --on-accent: #ffffff;
+  --accent: #8b9cf7;
+  --accent-2: #a78bfa;
+  --accent-soft: rgba(139,156,247,0.18);
+  --hover-veil: rgba(255,255,255,0.06);
+  --ok-text: #6ee7a0;
+  --ok-text-2: #6ee7a0;
+  --ok-bg: rgba(110,231,160,0.14);
+  --bad-text: #ff8a8a;
+  --bad-text-2: #ff7070;
+  --bad-bg: rgba(255,138,138,0.14);
+  --warn-text: #ffb454;
+  --warn-text-2: #ffa726;
+  --warn-bg: rgba(255,180,84,0.14);
+  --info-text: #7cc0ff;
+  --info-bg: rgba(124,192,255,0.14);
+  --neutral-text: #b6c2cc;
+  --neutral-bg: rgba(182,194,204,0.12);
+  --shadow: rgba(0,0,0,0.4);
+  --shadow-2: rgba(0,0,0,0.5);
+  --shadow-3: rgba(0,0,0,0.6);
+  --shadow-4: rgba(0,0,0,0.65);
+  color-scheme: dark;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -6,8 +103,8 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: #f5f5f5;
-  color: #333;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .app-shell {
@@ -18,21 +115,21 @@ body {
 .sidebar {
   width: 200px;
   flex-shrink: 0;
-  background: #1e1e2e;
+  background: var(--terminal-bg);
   padding: 20px 0;
   display: flex;
   flex-direction: column;
 }
 
 .sidebar-title {
-  color: white;
+  color: var(--on-accent);
   font-size: 18px;
   font-weight: 600;
   padding: 0 20px 20px;
 }
 
 .sidebar-link {
-  color: #b0b0c0;
+  color: var(--text-terminal-dim);
   text-decoration: none;
   padding: 12px 20px;
   font-size: 14px;
@@ -41,14 +138,14 @@ body {
 }
 
 .sidebar-link:hover {
-  background: rgba(255,255,255,0.05);
-  color: white;
+  background: var(--hover-veil);
+  color: var(--on-accent);
 }
 
 .sidebar-link.active {
-  background: rgba(102,126,234,0.15);
-  color: white;
-  border-left-color: #667eea;
+  background: var(--accent-soft);
+  color: var(--on-accent);
+  border-left-color: var(--accent);
 }
 
 .main-column {
@@ -57,13 +154,13 @@ body {
 }
 
 header {
-  background: white;
+  background: var(--surface);
   padding: 20px;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px var(--shadow);
 }
 
 .header-left {
@@ -75,7 +172,7 @@ header {
 .status-badge {
   padding: 6px 12px;
   border-radius: 20px;
-  color: white;
+  color: var(--on-accent);
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
@@ -89,13 +186,13 @@ header {
 
 .user-info span {
   font-size: 14px;
-  color: #666;
+  color: var(--text-muted);
 }
 
 .user-info button {
   padding: 8px 16px;
-  background: #f0f0f0;
-  border: 1px solid #ddd;
+  background: var(--surface-muted);
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
@@ -103,7 +200,7 @@ header {
 }
 
 .user-info button:hover {
-  background: #e0e0e0;
+  background: var(--border);
 }
 
 main {
@@ -125,14 +222,14 @@ main {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
 }
 
 .login-box {
-  background: white;
+  background: var(--surface);
   padding: 40px;
   border-radius: 8px;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  box-shadow: 0 10px 40px var(--shadow-3);
   text-align: center;
   max-width: 400px;
 }
@@ -140,19 +237,19 @@ main {
 .login-box h1 {
   font-size: 32px;
   margin-bottom: 10px;
-  color: #333;
+  color: var(--text);
 }
 
 .login-box p {
   font-size: 14px;
-  color: #666;
+  color: var(--text-muted);
   margin-bottom: 30px;
 }
 
 .login-btn {
   padding: 12px 32px;
-  background: #667eea;
-  color: white;
+  background: var(--accent);
+  color: var(--on-accent);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -162,7 +259,7 @@ main {
 }
 
 .login-btn:hover {
-  background: #764ba2;
+  background: var(--accent-2);
 }
 
 .metrics-grid {
@@ -173,20 +270,20 @@ main {
 }
 
 .metric-card {
-  background: white;
+  background: var(--surface);
   padding: 20px;
   border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px var(--shadow);
   transition: box-shadow 0.2s;
 }
 
 .metric-card:hover {
-  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 8px var(--shadow-2);
 }
 
 .metric-card h3 {
   font-size: 12px;
-  color: #666;
+  color: var(--text-muted);
   margin-bottom: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -195,26 +292,26 @@ main {
 .metric-value {
   font-size: 36px;
   font-weight: bold;
-  color: #333;
+  color: var(--text);
   margin-bottom: 5px;
 }
 
 .metric-unit {
   font-size: 12px;
-  color: #999;
+  color: var(--text-dimmer);
   margin-top: 5px;
 }
 
 .metric-detail {
   font-size: 13px;
-  color: #666;
+  color: var(--text-muted);
   margin-top: 10px;
 }
 
 .progress-bar {
   width: 100%;
   height: 8px;
-  background: #e0e0e0;
+  background: var(--border);
   border-radius: 4px;
   overflow: hidden;
   margin: 12px 0;
@@ -222,47 +319,47 @@ main {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #667eea, #764ba2);
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
   transition: width 0.3s ease;
 }
 
 .chart-container {
-  background: white;
+  background: var(--surface);
   padding: 20px;
   border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px var(--shadow);
   margin-bottom: 30px;
 }
 
 .chart-container h2 {
   margin-bottom: 20px;
   font-size: 18px;
-  color: #333;
+  color: var(--text);
 }
 
 .detail-section {
-  background: white;
+  background: var(--surface);
   padding: 20px;
   border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px var(--shadow);
   margin-bottom: 20px;
 }
 
 .detail-section h2 {
   margin-bottom: 6px;
   font-size: 18px;
-  color: #333;
+  color: var(--text);
 }
 
 .detail-section h3 {
   margin: 16px 0 8px;
   font-size: 15px;
-  color: #444;
+  color: var(--text-2);
 }
 
 .section-sub {
   font-size: 13px;
-  color: #888;
+  color: var(--text-dim);
   margin-bottom: 16px;
 }
 
@@ -275,17 +372,17 @@ main {
 .detail-table th {
   text-align: left;
   padding: 8px 10px;
-  background: #f5f5f7;
-  color: #555;
+  background: var(--bg-subtle);
+  color: var(--text-3);
   font-weight: 600;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
 .detail-table td {
   padding: 8px 10px;
-  border-bottom: 1px solid #f0f0f0;
-  color: #333;
+  border-bottom: 1px solid var(--surface-muted);
+  color: var(--text);
 }
 
 .detail-table tr:last-child td {
@@ -293,7 +390,7 @@ main {
 }
 
 .kv-table td:first-child {
-  color: #777;
+  color: var(--text-muted-2);
   width: 45%;
 }
 
@@ -307,32 +404,32 @@ main {
   border-radius: 10px;
   font-size: 11px;
   font-weight: 600;
-  background: #eceff1;
-  color: #455a64;
+  background: var(--neutral-bg);
+  color: var(--neutral-text);
 }
 
-.pill.good { background: #e8f5e9; color: #2e7d32; }
-.pill.warn { background: #fff3e0; color: #ef6c00; }
-.pill.bad  { background: #ffebee; color: #c62828; }
+.pill.good { background: var(--ok-bg); color: var(--ok-text); }
+.pill.warn { background: var(--warn-bg); color: var(--warn-text); }
+.pill.bad  { background: var(--bad-bg); color: var(--bad-text); }
 
 .chat-toggle {
   position: fixed;
   bottom: 20px;
   right: 20px;
   padding: 12px 20px;
-  background: #667eea;
-  color: white;
+  background: var(--accent);
+  color: var(--on-accent);
   border: none;
   border-radius: 24px;
   cursor: pointer;
   font-size: 14px;
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 8px var(--shadow-3);
   z-index: 100;
 }
 
 .chat-toggle:hover {
-  background: #764ba2;
+  background: var(--accent-2);
 }
 
 .chat-widget {
@@ -341,9 +438,9 @@ main {
   right: 20px;
   width: 340px;
   max-height: 480px;
-  background: white;
+  background: var(--surface);
   border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  box-shadow: 0 4px 20px var(--shadow-4);
   display: flex;
   flex-direction: column;
   z-index: 100;
@@ -352,8 +449,8 @@ main {
 
 .chat-widget-header {
   padding: 12px 15px;
-  background: #667eea;
-  color: white;
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 600;
   font-size: 14px;
 }
@@ -366,13 +463,13 @@ main {
 
 .chat-widget .chat-input-row {
   padding: 10px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--border-faint);
 }
 
 .explain-btn {
   padding: 10px 20px;
-  background: #667eea;
-  color: white;
+  background: var(--accent);
+  color: var(--on-accent);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -383,7 +480,7 @@ main {
 }
 
 .explain-btn:hover:not(:disabled) {
-  background: #764ba2;
+  background: var(--accent-2);
 }
 
 .explain-btn:disabled {
@@ -396,7 +493,7 @@ main {
   overflow-y: auto;
   margin-bottom: 15px;
   padding: 10px;
-  background: #f5f5f5;
+  background: var(--bg);
   border-radius: 4px;
 }
 
@@ -404,16 +501,16 @@ main {
   padding: 8px 0;
   font-size: 14px;
   line-height: 1.5;
-  color: #333;
+  color: var(--text);
 }
 
 .chat-message.chat-user {
-  color: #444;
+  color: var(--text-2);
 }
 
 .chat-message.chat-assistant {
-  color: #333;
-  border-left: 3px solid #667eea;
+  color: var(--text);
+  border-left: 3px solid var(--accent);
   padding-left: 10px;
 }
 
@@ -425,7 +522,7 @@ main {
 .chat-input {
   flex: 1;
   padding: 10px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   font-size: 14px;
 }
@@ -433,23 +530,23 @@ main {
 .alert-ai-explanation {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px dashed #ccc;
+  border-top: 1px dashed var(--border-input);
   font-size: 13px;
-  color: #555;
+  color: var(--text-3);
   font-style: italic;
 }
 
 .alerts-container {
-  background: white;
+  background: var(--surface);
   padding: 20px;
   border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px var(--shadow);
 }
 
 .alerts-container h2 {
   margin-bottom: 15px;
   font-size: 18px;
-  color: #333;
+  color: var(--text);
 }
 
 .alerts-list {
@@ -463,23 +560,23 @@ main {
   border-left: 4px solid;
   border-radius: 4px;
   margin-bottom: 8px;
-  background: #f9f9f9;
+  background: var(--surface-alt);
   font-size: 14px;
 }
 
 .alert-item.alert-critical {
-  border-left-color: #d32f2f;
-  background: #ffebee;
+  border-left-color: var(--bad-text-2);
+  background: var(--bad-bg);
 }
 
 .alert-item.alert-warning {
-  border-left-color: #f57c00;
-  background: #fff3e0;
+  border-left-color: var(--warn-text-2);
+  background: var(--warn-bg);
 }
 
 .alert-item.alert-info {
-  border-left-color: #1976d2;
-  background: #e3f2fd;
+  border-left-color: var(--info-text);
+  background: var(--info-bg);
 }
 
 .alert-header {
@@ -497,61 +594,61 @@ main {
 
 .alert-time {
   font-size: 12px;
-  color: #999;
+  color: var(--text-dimmer);
 }
 
 .alert-message {
   margin: 8px 0;
-  color: #333;
+  color: var(--text);
 }
 
 .alert-value {
   font-size: 12px;
-  color: #666;
+  color: var(--text-muted);
   margin: 5px 0 0 0;
 }
 
 .no-alerts {
   text-align: center;
-  color: #388e3c;
+  color: var(--ok-text-2);
   padding: 20px;
   font-weight: 500;
 }
 
 .no-data {
   text-align: center;
-  color: #999;
+  color: var(--text-dimmer);
   padding: 40px;
 }
 
 .host-select {
   padding: 6px 10px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   font-size: 13px;
-  background: white;
-  color: #333;
+  background: var(--surface);
+  color: var(--text);
 }
 
 .header-host {
   font-size: 14px;
   font-weight: 600;
-  color: #555;
+  color: var(--text-3);
 }
 
 /* Small text buttons: the alerts' Clear, Clear all and Dismiss. */
 .link-btn {
-  background: white;
-  border: 1px solid #ccc;
+  background: var(--surface);
+  border: 1px solid var(--border-input);
   border-radius: 4px;
   padding: 2px 10px;
   font-size: 12px;
-  color: #555;
+  color: var(--text-3);
   cursor: pointer;
 }
 
 .link-btn:hover:not(:disabled) {
-  background: #f0f0f0;
+  background: var(--surface-muted);
 }
 
 .link-btn:disabled {
@@ -630,20 +727,20 @@ main {
   gap: 10px;
   padding: 8px 12px;
   margin-bottom: 6px;
-  border-left: 4px solid #f57c00;
+  border-left: 4px solid var(--warn-text-2);
   border-radius: 4px;
-  background: #fff3e0;
+  background: var(--warn-bg);
   font-size: 14px;
 }
 
 .alert-overview li.critical {
-  border-left-color: #d32f2f;
-  background: #ffebee;
+  border-left-color: var(--bad-text-2);
+  background: var(--bad-bg);
 }
 
 .alert-details summary {
   cursor: pointer;
-  color: #667eea;
+  color: var(--accent);
   font-weight: 600;
   font-size: 14px;
   margin: 4px 0 12px;
@@ -653,12 +750,12 @@ main {
   margin: 4px 0 16px 20px;
   font-size: 13px;
   line-height: 1.8;
-  color: #555;
+  color: var(--text-3);
 }
 
 .command-box {
-  background: #1e1e2e;
-  color: #9ece6a;
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
   padding: 12px;
   border-radius: 4px;
   font-family: 'Monaco', 'Courier New', monospace;
@@ -673,7 +770,7 @@ main {
   align-items: center;
   gap: 10px;
   font-size: 14px;
-  color: #333;
+  color: var(--text);
   cursor: pointer;
   user-select: none;
 }
@@ -681,7 +778,7 @@ main {
 .toggle-row input {
   width: 16px;
   height: 16px;
-  accent-color: #667eea;
+  accent-color: var(--accent);
   cursor: pointer;
 }
 
@@ -700,7 +797,7 @@ main {
 .cell-note {
   display: block;
   font-size: 11px;
-  color: #999;
+  color: var(--text-dimmer);
 }
 
 .pill-stack {
@@ -722,17 +819,45 @@ main {
   max-width: 160px;
 }
 
-.growth-up { color: #c62828; font-weight: 600; }
-.growth-down { color: #2e7d32; font-weight: 600; }
+.growth-up { color: var(--bad-text); font-weight: 600; }
+.growth-down { color: var(--ok-text); font-weight: 600; }
 
-.over-quota { color: #c62828; font-weight: 600; }
+.over-quota { color: var(--bad-text); font-weight: 600; }
 
 /* Nothing to show, which is neither good news nor bad — .no-alerts is green
    because an absence of alerts is genuinely good, and borrowing it here made
    an empty table read as a success banner. */
 .empty-state {
   text-align: center;
-  color: #888;
+  color: var(--text-dim);
   padding: 20px;
   font-size: 13px;
+}
+
+/* Segmented control for the theme choice. */
+.theme-picker {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.theme-option {
+  padding: 7px 16px;
+  border: none;
+  border-right: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.theme-option:last-child { border-right: none; }
+.theme-option:hover:not(.active) { background: var(--surface-muted); }
+
+.theme-option.active {
+  background: var(--accent);
+  color: var(--on-accent);
 }
