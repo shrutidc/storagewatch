@@ -60,7 +60,9 @@ function Users() {
         Home directory usage, quota limits from <code>quota(1)</code>, and growth since
         the previous measurement. Measured on a background thread — walking a home
         directory takes minutes — so these are a recent reading rather than a live one.
-        {measured && <> Last measured {new Date(measured).toLocaleString()}.</>}
+        {/* Rows left from before sizing was switched off would date a
+            measurement that no longer runs. */}
+        {measured && !sizingOff && <> Last measured {new Date(measured).toLocaleString()}.</>}
       </p>
 
       {sizingOff ? (
