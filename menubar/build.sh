@@ -6,13 +6,14 @@ set -e
 cd "$(dirname "$0")"
 
 rm -rf build
-mkdir -p build/StorageWatch.app/Contents/MacOS
+mkdir -p build/StorageWatch.app/Contents/MacOS build/StorageWatch.app/Contents/Resources
 for arch in arm64 x86_64; do
   swiftc -O -parse-as-library -target "$arch-apple-macos13" StorageWatchBar.swift -o "build/StorageWatch-$arch"
 done
 lipo -create build/StorageWatch-arm64 build/StorageWatch-x86_64 \
   -output build/StorageWatch.app/Contents/MacOS/StorageWatch
 cp Info.plist build/StorageWatch.app/Contents/
+cp AppIcon.icns build/StorageWatch.app/Contents/Resources/
 codesign --force --sign - build/StorageWatch.app
 
 rm -f StorageWatch.zip

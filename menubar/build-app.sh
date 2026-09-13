@@ -14,7 +14,7 @@ OUT=build/standalone
 APP=$OUT/StorageWatch.app
 
 rm -rf "$OUT"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 swiftc -O -parse-as-library -target "$(uname -m)-apple-macos13" StorageWatchBar.swift \
   -o "$APP/Contents/MacOS/StorageWatch"
 "$PYTHON" -m PyInstaller --onefile --noconfirm --log-level WARN \
@@ -22,6 +22,7 @@ swiftc -O -parse-as-library -target "$(uname -m)-apple-macos13" StorageWatchBar.
   --specpath "$OUT" ../collector/collector.py
 cp "$OUT/dist/storagewatch-collector" "$APP/Contents/MacOS/"
 cp Info.plist "$APP/Contents/"
+cp AppIcon.icns "$APP/Contents/Resources/"
 codesign --force --deep --sign - "$APP"
 
 rm -f StorageWatch-Mac.zip
