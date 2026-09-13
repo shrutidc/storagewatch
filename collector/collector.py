@@ -661,6 +661,10 @@ def get_user_quotas(users):
 # 77 seconds on the machine this was written on. Far too slow for a five-second
 # loop, so it runs on its own thread and the loop only ever reads the last
 # finished result.
+# Sizing a home means reading every folder in it, which makes macOS ask this
+# process for access to Documents, Desktop, Photos, Mail and more. StorageWatch
+# reports system data; per-user sizing is only for a Mac that opts in.
+USER_SIZING = os.getenv("STORAGEWATCH_SIZE_HOMES") == "1"
 USER_USAGE_INTERVAL = int(os.getenv("USER_USAGE_INTERVAL_SECONDS", "1800"))
 USER_USAGE_TIMEOUT = int(os.getenv("USER_USAGE_TIMEOUT_SECONDS", "900"))
 _user_usage = {"users": [], "measured_at": None, "measuring": False}
@@ -824,6 +828,9 @@ def send_system_info():
         "network_mounts": get_network_mounts(),
         "nfs_client_stats": get_nfs_client_stats(),
         "inode_usage": get_inode_usage(),
+        # Lets the dashboard say per-user sizing is off, rather than waiting
+        # for a measurement that will never come.
+        "user_sizing": USER_SIZING,
     }
     try:
         requests.post(f"{BACKEND_URL}/api/system-info", json=system_info,
@@ -1067,8 +1074,10 @@ def main():
     # the one a newly connected dashboard shows — carries real throughput, not 0.
     previous_counters, previous_time = psutil.disk_io_counters(), time.time()
     # Home directories take minutes to walk, so sizing starts now and runs on
-    # its own thread; the first report simply carries no sizes yet.
-    start_user_usage_worker()
+    # its own thread; the first report simply carries no sizes yet. Off unless
+    # the Mac opts in — see USER_SIZING.
+    if USER_SIZING:
+        start_user_usage_worker()
     time.sleep(1)
 
     cycle = 0
@@ -1142,7 +1151,9 @@ def install():
     LAUNCH_AGENT.write_bytes(plistlib.dumps({
         "Label": "tech.storagewatch.collector",
         "ProgramArguments": [sys.executable, str(script)],
-        "EnvironmentVariables": {"BACKEND_URL": BACKEND_URL, "PYTHONUNBUFFERED": "1"},
+        "EnvironmentVariables": {"BACKEND_URL": BACKEND_URL, "PYTHONUNBUFFERED": "1",
+                                 # Carry an opt-in to per-user sizing into the agent.
+                                 **({"STORAGEWATCH_SIZE_HOMES": "1"} if USER_SIZING else {})},
         "RunAtLoad": True,
         "KeepAlive": True,
         "StandardOutPath": str(log),

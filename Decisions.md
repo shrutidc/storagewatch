@@ -180,6 +180,16 @@ reported partial home sizes as complete; those are now flagged and shown as a lo
 bound. The menu bar app's LaunchAgent now starts it directly with KeepAlive on crash, so
 it comes back if it dies but stays closed after Quit.
 
+### Per-user sizing is opt-in
+
+Walking home directories made macOS ask the collector for access to Documents, Desktop,
+Photos, Mail and more — on every Mac, for files nobody asked this tool to read.
+Everything else it reports comes from system tools (`diskutil`, `ioreg`, `statfs`, `df`,
+`nfsstat`) that touch no personal files. Sizing now runs only where
+`STORAGEWATCH_SIZE_HOMES=1` is set at install; the collector says so in its system info,
+and the Users section explains the switch instead of waiting for a measurement that
+will never come.
+
 ### Missing secrets abort startup
 
 Absent `AUTH0_DOMAIN` or `AUTH0_AUDIENCE`, the process exits. Failing

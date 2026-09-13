@@ -253,7 +253,8 @@ against a share has a five-second limit, so a server that has gone away is repor
 not responding rather than stalling the collector — an unguarded `statvfs` on a dead NFS
 mount blocks in the kernel forever and would take the local disks down with it.
 
-**Users and quotas** shows each account's home directory size, its share of everything in
+**Users and quotas** — on a Mac that opts in to per-user sizing (see below; it is off by
+default) — shows each account's home directory size, its share of everything in
 use, quota limits from `quota(1)`, growth since the previous measurement, and the largest
 folders inside each home. Sizing means walking the directory — 77 seconds for a 68 GB
 home on the machine this was written on — so the collector measures on a background
@@ -282,11 +283,13 @@ tested on 3.9.6 and 3.12. On a Mac without the Command Line Tools it opens Apple
 installer for them and asks you to run the command again. The virtualenv is rebuilt on
 every install, because `venv` keeps whichever interpreter created it.
 
-Per-user sizes come from walking each home directory as the signed-in account. A
-standard account cannot open other users' homes, and macOS privacy controls hide
-Documents, Desktop, Mail and similar from a background process until Python is given
-**Full Disk Access** (System Settings → Privacy & Security). A size that missed any
-folder is marked **partial** on the Dashboard rather than passed off as the whole.
+Per-user sizing is **off by default**. Measuring a home directory means reading every
+folder in it, which makes macOS ask for access to Documents, Desktop, Photos, Mail and
+more, and StorageWatch only needs system data. To turn it on for a Mac, install with
+`curl -fsSL https://storagewatch.tech/install.sh | STORAGEWATCH_SIZE_HOMES=1 sh`. When on,
+a standard account cannot open other users' homes, and protected folders stay hidden
+until Python has **Full Disk Access** (System Settings → Privacy & Security), so a size
+that missed any folder is marked **partial** rather than passed off as the whole.
 
 ## Menu bar app
 

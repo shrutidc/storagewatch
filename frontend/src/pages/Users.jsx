@@ -11,6 +11,9 @@ import { bytes } from '../format.js'
 function Users() {
   const { users, systemInfo } = useOutletContext()
   const rows = users || []
+  // Collectors older than the switch don't send it, so only an explicit false
+  // means sizing is off.
+  const sizingOff = systemInfo?.user_sizing === false
 
   const measured = rows.length ? rows[0].time : null
   const totalUsed = rows.reduce((n, u) => n + (u.used_bytes || 0), 0)
@@ -60,7 +63,14 @@ function Users() {
         {measured && <> Last measured {new Date(measured).toLocaleString()}.</>}
       </p>
 
-      {rows.length === 0 ? (
+      {sizingOff ? (
+        <p className="section-sub">
+          Per-user sizing is off. Measuring a home directory means reading every folder in
+          it, which makes macOS ask for access to Documents, Desktop, Photos, Mail and more —
+          so StorageWatch reports system data only, unless a Mac opts in by installing with{' '}
+          <code>STORAGEWATCH_SIZE_HOMES=1</code>.
+        </p>
+      ) : rows.length === 0 ? (
         <p className="section-sub">
           No measurement yet. The collector sizes every home directory shortly after it
           starts and then every 30 minutes; the first pass on a large disk can take
@@ -123,7 +133,7 @@ function Users() {
         </div>
       )}
 
-      {rows.some(u => u.complete === false) && (
+      {!sizingOff && rows.some(u => u.complete === false) && (
         <p className="section-sub">
           Sizes marked partial leave out folders the collector may not read: other
           users' home directories, which a standard account can't open, and — until
