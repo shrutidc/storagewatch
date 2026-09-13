@@ -4,6 +4,10 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import './App.css'
 import InstallCommand from './InstallCommand.jsx'
+import LoginParticles from './LoginParticles.jsx'
+import LoginCircuit from './LoginCircuit.jsx'
+import LoginLabels from './LoginLabels.jsx'
+import ThemeToggleButton from './ThemeToggleButton.jsx'
 
 // The one-line collector installer. In development the API runs on :8000
 // rather than Vite's :3000, so the installer is pointed there explicitly.
@@ -161,13 +165,29 @@ function App() {
   if (!isAuthenticated) {
     return (
       <div className="login-container">
+        <ThemeToggleButton />
+        <LoginCircuit />
+        <LoginLabels />
+        <LoginParticles />
         <div className="login-box">
           <h1>StorageWatch</h1>
           <p>Monitor your macOS storage with AI-powered insights</p>
           {/* Come back to the page that asked, e.g. /connect with its query. */}
           <button className="login-btn" onClick={() => loginWithRedirect({
             appState: { returnTo: location.pathname + location.search },
-          })}>Login with Auth0</button>
+          })}>
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor" aria-hidden="true">
+              <path d="M12 2 4 5.2v6.1c0 5 3.4 9.7 8 10.7 4.6-1 8-5.7 8-10.7V5.2L12 2zm0 2.2 6 2.4v4.7c0 4-2.6 7.8-6 8.7-3.4-.9-6-4.7-6-8.7V6.6l6-2.4z" />
+            </svg>
+            Login
+            <svg className="login-btn-arrow" viewBox="0 0 24 24" width="18" height="18"
+                 fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                 strokeLinejoin="round" aria-hidden="true">
+              <line x1="5" y1="12" x2="18" y2="12" />
+              <polyline points="13 7 18 12 13 17" />
+            </svg>
+          </button>
+          <p className="login-foot">Local · Encrypted · Observable</p>
         </div>
       </div>
     )
