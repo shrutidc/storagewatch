@@ -17,7 +17,7 @@ from database import (init_db, insert_metrics, get_latest_metrics, get_metrics_h
                       get_hosts, create_agent_token, list_agent_tokens, get_dashboard,
                       get_agent_state, set_menu_bar_enabled, set_menu_bar_applied,
                       insert_user_usage, get_user_usage_latest, get_user_usage_history,
-                      missing_tables)
+                      missing_tables, get_policy_acceptance, accept_policy)
 from alerts import detect_anomalies, detect_user_anomalies
 from auth import require_user, require_agent, check_config
 
@@ -259,6 +259,38 @@ def get_user_history_endpoint(username: str, hostname: str | None = None,
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return [{"time": r["time"].isoformat(), "used_bytes": r["used_bytes"]} for r in rows]
+
+# Bumping this asks everyone to read and accept again. Change it whenever the
+# privacy page gains something a person would want to know before agreeing —
+# a new field collected, or a new place data is sent.
+POLICY_VERSION = "2026-09-13"
+
+@app.get("/api/policy")
+def get_policy(user: dict = Depends(require_user)):
+    """Whether this account has accepted the current privacy page."""
+    try:
+        accepted = get_policy_acceptance(user["sub"])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "current_version": POLICY_VERSION,
+        "accepted_version": accepted["version"] if accepted else None,
+        "accepted_at": accepted["accepted_at"].isoformat() if accepted else None,
+        "accepted": bool(accepted and accepted["version"] == POLICY_VERSION),
+    }
+
+@app.post("/api/policy/accept")
+def post_policy_accept(data: dict = None, user: dict = Depends(require_user)):
+    """Record that this account accepted the privacy page.
+
+    The version is taken from the server, not the request: a client that sent
+    its own could record agreement to a revision that does not exist.
+    """
+    try:
+        accept_policy(user["sub"], POLICY_VERSION)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"accepted": True, "version": POLICY_VERSION}
 
 @app.get("/api/dashboard")
 def get_dashboard_endpoint(hostname: str | None = None,

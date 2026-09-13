@@ -79,7 +79,7 @@ def init_db():
 # Every table a request path reads from. The dashboard joins against all of
 # them, so one missing table is a broken dashboard rather than a missing panel.
 REQUIRED_TABLES = ("filesystem_metrics", "alerts", "agent_tokens", "system_info",
-                   "host_preferences", "user_usage")
+                   "host_preferences", "user_usage", "policy_acceptance")
 
 def missing_tables():
     """Which required tables do not exist. Empty when the schema is complete."""
@@ -375,6 +375,26 @@ def get_user_usage_history(owner_sub, username, hostname=None, limit=100):
             ORDER BY time DESC LIMIT %s
         ) recent ORDER BY time
     """, (owner_sub, username, hostname, hostname, limit))
+
+
+# --- privacy consent --------------------------------------------------------
+
+def get_policy_acceptance(owner_sub):
+    """Which revision of the privacy page this account accepted, or None."""
+    row = _one("""
+        SELECT version, accepted_at FROM policy_acceptance WHERE owner_sub = %s
+    """, (owner_sub,))
+    return dict(row) if row else None
+
+def accept_policy(owner_sub, version):
+    """Record agreement. Re-accepting a newer revision replaces the old row —
+    the current agreement is what matters, not the history of them."""
+    _execute("""
+        INSERT INTO policy_acceptance (owner_sub, version, accepted_at)
+        VALUES (%s, %s, NOW())
+        ON CONFLICT (owner_sub)
+        DO UPDATE SET version = EXCLUDED.version, accepted_at = NOW()
+    """, (owner_sub, version))
 
 
 # --- dashboard -------------------------------------------------------------

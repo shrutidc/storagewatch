@@ -8,6 +8,7 @@ import LoginParticles from './LoginParticles.jsx'
 import LoginCircuit from './LoginCircuit.jsx'
 import LoginLabels from './LoginLabels.jsx'
 import Privacy from './pages/Privacy.jsx'
+import PolicyGate from './PolicyGate.jsx'
 import ThemeToggleButton from './ThemeToggleButton.jsx'
 
 // The one-line collector installer. In development the API runs on :8000
@@ -28,6 +29,9 @@ function App() {
   const [systemInfo, setSystemInfo] = useState(null)
   const [preferences, setPreferences] = useState(null)
   const [users, setUsers] = useState([])
+  // null while unknown: the dashboard must not flash into view before we know
+  // whether this account still has to accept.
+  const [policy, setPolicy] = useState(null)
   const [lastRefresh, setLastRefresh] = useState(null)
   const [hosts, setHosts] = useState([])
   // null = follow whichever machine reported most recently
@@ -56,6 +60,21 @@ function App() {
       return () => clearInterval(interval)
     }
   }, [isAuthenticated, selectedHost, location.pathname, hasMetrics])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    ;(async () => {
+      try {
+        const res = await axios.get('/api/policy', await authConfig())
+        setPolicy(res.data)
+      } catch (err) {
+        // A failure here must not lock anyone out of their own dashboard, so
+        // it is treated as accepted and logged rather than blocking.
+        console.error('Failed to read policy acceptance:', err)
+        setPolicy({ accepted: true })
+      }
+    })()
+  }, [isAuthenticated])
 
   // The machine list changes rarely, so it loads at sign-in and when Settings
   // opens rather than on every poll — the query scans the whole history.
@@ -217,6 +236,18 @@ function App() {
           <a className="login-privacy" href="/privacy">What StorageWatch collects</a>
         </div>
       </div>
+    )
+  }
+
+  if (policy === null) return <div className="loading">Loading...</div>
+
+  if (!policy.accepted) {
+    return (
+      <PolicyGate
+        authConfig={authConfig}
+        version={policy.current_version}
+        onAccepted={() => setPolicy({ ...policy, accepted: true })}
+      />
     )
   }
 

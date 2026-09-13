@@ -1739,3 +1739,105 @@ a.explain-btn {
 .legal-back:hover {
   color: var(--text);
 }
+
+/* --- privacy consent gate -------------------------------------------------- */
+
+.policy-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px 16px;
+  background: var(--bg);
+}
+
+.policy-gate-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(820px, 100%);
+  /* Bounded so the page itself never scrolls: the text scrolls inside, which
+     is what the accept button watches. */
+  max-height: min(880px, calc(100vh - 48px));
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: 0 0 0 1px var(--surface-border), 0 24px 70px var(--shadow-3);
+  overflow: hidden;
+}
+
+.policy-gate-head {
+  padding: 26px 30px 18px;
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.policy-gate-head h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.policy-gate-head p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.policy-gate-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 14px;
+}
+
+/* The page is already a card everywhere else; inside the gate it is the
+   body of one, so it drops its own frame. */
+.policy-gate-scroll .detail-section {
+  background: none;
+  box-shadow: none;
+  margin-bottom: 0;
+}
+
+.policy-gate-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 30px 20px;
+  border-top: 1px solid var(--border-faint);
+}
+
+.policy-gate-hint {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.policy-accept {
+  width: auto;
+  flex-shrink: 0;
+  padding: 12px 24px;
+  font-size: 14.5px;
+}
+
+.policy-accept:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+@media (max-width: 640px) {
+  .policy-gate-head,
+  .policy-gate-foot {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .policy-gate-foot {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .policy-accept {
+    width: 100%;
+  }
+}

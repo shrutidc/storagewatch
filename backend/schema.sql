@@ -148,3 +148,16 @@ CREATE INDEX IF NOT EXISTS idx_user_usage_owner_host_time
 -- False when the collector couldn't read every folder — another user's home, or
 -- privacy-protected folders without Full Disk Access — so the size is a floor.
 ALTER TABLE user_usage ADD COLUMN IF NOT EXISTS complete BOOLEAN DEFAULT TRUE;
+
+-- Consent to the privacy page, per account.
+--
+-- Kept server-side rather than in the browser: this is a record of what a
+-- person agreed to and when, and a localStorage flag would be a per-browser
+-- guess that vanishes on a new machine. `version` is the policy revision they
+-- accepted, so changing the page can require agreement again rather than
+-- silently carrying the old consent forward.
+CREATE TABLE IF NOT EXISTS policy_acceptance (
+    owner_sub TEXT PRIMARY KEY,
+    version TEXT NOT NULL,
+    accepted_at TIMESTAMPTZ DEFAULT NOW()
+);
