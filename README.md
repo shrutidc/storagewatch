@@ -26,7 +26,8 @@ answers.
 
 ## Features
 
-- **One-line install** — works with any Python 3.9+, Apple's own included. The Mac
+- **Download or one-line install** — a Mac app with everything bundled, or a Terminal
+  command that works with any Python 3.9+, Apple's own included. The Mac
   connects through a browser sign-in and reports in the background at every login.
 - **Storage health** — capacity, live read/write throughput, APFS containers and
   volumes, physical disks with SMART plus the kernel's I/O error, retry and latency
@@ -72,6 +73,30 @@ flowchart LR
 
 ## Monitor a Mac
 
+There are two ways to put StorageWatch on a Mac. Both connect it to your account with a
+browser sign-in and keep it reporting in the background at every login.
+
+### Download the app
+
+1. Download **[StorageWatch-Mac.zip](https://storagewatch.tech/StorageWatch-Mac.zip)** —
+   also offered on the dashboard as **Download for Mac**.
+2. Unzip it, move **StorageWatch** to **Applications** and open it. It needs no Python and
+   no Terminal: the collector is bundled inside the app.
+3. The first time you open it, macOS asks you to confirm: open **System Settings →
+   Privacy & Security**, click **Open Anyway** next to StorageWatch, and confirm.
+4. Sign in and click **Connect** when your browser opens.
+
+The download is built for Apple silicon; on an Intel Mac, use the Terminal install. The
+app reports to `storagewatch.tech`. If you host the backend yourself — on Vultr, Render or
+any other Docker host (see [Deployment](#deployment)) — point the app at your server and
+reopen it:
+
+```bash
+defaults write tech.storagewatch.menubar ServerURL https://your-domain
+```
+
+### Install from Terminal
+
 On the Mac you want to monitor, run:
 
 ```bash
@@ -106,6 +131,9 @@ curl -fsSL https://storagewatch.tech/install.sh | STORAGEWATCH_SIZE_HOMES=1 sh
 ```bash
 ~/.storagewatch/venv/bin/python ~/.storagewatch/collector.py --uninstall
 ```
+
+To remove the downloaded app instead, choose **Quit StorageWatch** from its menu, delete
+it from Applications, and delete `~/Library/LaunchAgents/tech.storagewatch.app.plist`.
 
 ## Development
 
@@ -435,7 +463,8 @@ storagewatch/
 ├── collector/        Python agent and install.sh — runs on each monitored Mac
 ├── backend/          FastAPI server: auth, alert rules, schema, installer downloads
 ├── frontend/         React dashboard (Vite)
-├── menubar/          SwiftUI menu bar app; build.sh produces StorageWatch.zip
+├── menubar/          SwiftUI menu bar app; build.sh → StorageWatch.zip,
+│                     build-app.sh → StorageWatch-Mac.zip (app + bundled collector)
 ├── Dockerfile        One image: builds the dashboard, serves it with the API
 ├── render.yaml       Render deployment
 ├── requirements.txt  Python dependencies for the backend and collector

@@ -16,6 +16,16 @@ function InstallCommand({ command }) {
 
   return (
     <>
+      <p className="section-sub">
+        <a className="explain-btn" href="/StorageWatch-Mac.zip" download
+           style={{ display: 'inline-block', textDecoration: 'none', marginRight: 10 }}>
+          Download for Mac
+        </a>
+        No Terminal needed: unzip, move StorageWatch to Applications and open it (Apple
+        silicon). The first time, allow it under System Settings → Privacy &amp; Security →
+        Open Anyway.
+      </p>
+      <p className="section-sub">Or install from Terminal:</p>
       <button className="explain-btn" onClick={copy}>
         {copied ? '✓ Copied — now paste it into Terminal' : 'Copy command'}
       </button>

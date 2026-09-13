@@ -620,6 +620,13 @@ def menu_bar_app():
     return FileResponse(COLLECTOR_DIR.parent / "menubar" / "StorageWatch.zip",
                         media_type="application/zip")
 
+@app.get("/StorageWatch-Mac.zip")
+def standalone_mac_app():
+    """The downloadable app: the menu bar app with the collector bundled
+    inside (built by menubar/build-app.sh), for installing without Terminal."""
+    return FileResponse(COLLECTOR_DIR.parent / "menubar" / "StorageWatch-Mac.zip",
+                        media_type="application/zip", filename="StorageWatch-Mac.zip")
+
 # Serve the built dashboard from this same app, so the browser talks to one
 # origin and /api calls need no CORS or proxy. Vite's dev proxy only exists
 # under `npm run dev`, so a production build has to be served this way.
