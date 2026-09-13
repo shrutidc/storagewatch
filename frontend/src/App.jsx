@@ -7,6 +7,7 @@ import InstallCommand from './InstallCommand.jsx'
 import LoginParticles from './LoginParticles.jsx'
 import LoginCircuit from './LoginCircuit.jsx'
 import LoginLabels from './LoginLabels.jsx'
+import Privacy from './pages/Privacy.jsx'
 import ThemeToggleButton from './ThemeToggleButton.jsx'
 
 // The one-line collector installer. In development the API runs on :8000
@@ -43,6 +44,7 @@ function App() {
 
   const onSettings = location.pathname === '/settings'
   const onConnect = location.pathname === '/connect'
+  const onPrivacy = location.pathname === '/privacy'
 
   const hasMetrics = Boolean(metrics)
   useEffect(() => {
@@ -162,6 +164,18 @@ function App() {
 
   if (isLoading) return <div className="loading">Loading...</div>
 
+  // Before the sign-in gate: the point of reading what StorageWatch collects is
+  // to decide whether to hand it a Mac, which is a decision made while signed
+  // out. It renders on its own, without the dashboard chrome around it.
+  if (onPrivacy) {
+    return (
+      <div className="legal-standalone">
+        <a className="legal-back" href="/">← StorageWatch</a>
+        <Privacy />
+      </div>
+    )
+  }
+
   if (!isAuthenticated) {
     return (
       <div className="login-container">
@@ -188,6 +202,7 @@ function App() {
             </svg>
           </button>
           <p className="login-foot">Local · Encrypted · Observable</p>
+          <a className="login-privacy" href="/privacy">What StorageWatch collects</a>
         </div>
       </div>
     )
@@ -198,7 +213,7 @@ function App() {
       <nav className="sidebar">
         <h2 className="sidebar-title">
           <img src="/logo.svg" alt="" className="brand-logo" />
-          StorageWatch
+          <span className="brand-word">StorageWatch</span>
         </h2>
         <NavLink to="/" end className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Dashboard</NavLink>
         <NavLink to="/settings" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Settings</NavLink>
@@ -268,7 +283,7 @@ function App() {
               </p>
               <p className="alert-ai-explanation">{authError}</p>
             </div>
-          ) : (metrics || onSettings || onConnect) ? (
+          ) : (metrics || onSettings || onConnect || onPrivacy) ? (
             // Settings and Connect must render without metrics: a new user has
             // no data until their first collector connects.
             <div className="page" key={location.pathname}>

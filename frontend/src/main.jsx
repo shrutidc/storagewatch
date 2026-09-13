@@ -6,6 +6,7 @@ import App from './App.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Settings from './pages/Settings.jsx'
 import Connect from './pages/Connect.jsx'
+import Privacy from './pages/Privacy.jsx'
 import { initTheme } from './theme.js'
 
 // Before render: mounting first would flash a light page on a dark-mode Mac.
@@ -51,6 +52,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route index element={<Dashboard />} />
           <Route path="settings" element={<Settings />} />
           <Route path="connect" element={<Connect />} />
+            <Route path="privacy" element={<Privacy />} />
           {/* The old per-tab URLs are now sections of the dashboard. */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

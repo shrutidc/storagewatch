@@ -78,6 +78,15 @@ function Settings() {
 
       <MenuBarSetting />
       <ThemeSetting />
+
+      <div className="detail-section">
+        <h2>Privacy</h2>
+        <p className="section-sub">
+          What this agent collects from your Mac, where it is stored, and what it never
+          reads.
+        </p>
+        <a className="explain-btn" href="/privacy">Read the privacy page</a>
+      </div>
     </>
   )
 }

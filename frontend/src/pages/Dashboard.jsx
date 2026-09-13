@@ -1,5 +1,10 @@
+import { lazy, Suspense } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import Performance from './Performance.jsx'
+
+// Recharts is by far the largest dependency here, and only this one section
+// uses it. Loading it on demand keeps it out of the first paint — and off the
+// sign-in page entirely, which needs no chart at all.
+const Performance = lazy(() => import('./Performance.jsx'))
 import Alerts from './Alerts.jsx'
 import Volumes from './Volumes.jsx'
 import Disks from './Disks.jsx'
@@ -48,7 +53,14 @@ function Dashboard() {
       {/* Each fact appears once: the cards above carry current storage and
           throughput, and every section below adds only what they can't. */}
       <Alerts />
-      <Performance />
+      <Suspense fallback={
+        <div className="detail-section">
+          <h2>I/O performance</h2>
+          <p className="section-sub">Loading chart…</p>
+        </div>
+      }>
+        <Performance />
+      </Suspense>
       <Apfs />
       <Volumes />
       <Disks />
