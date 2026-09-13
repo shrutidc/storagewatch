@@ -196,14 +196,6 @@ body {
   flex-shrink: 0;
 }
 
-.login-logo {
-  width: 72px;
-  height: 72px;
-  margin-bottom: 14px;
-  /* Lifts the tile off the card, like an app icon. */
-  filter: drop-shadow(0 6px 14px var(--shadow-3));
-}
-
 .sidebar-link {
   color: var(--text-terminal-dim);
   text-decoration: none;

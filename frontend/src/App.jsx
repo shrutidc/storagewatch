@@ -170,7 +170,6 @@ function App() {
         <LoginLabels />
         <LoginParticles />
         <div className="login-box">
-          <img src="/logo.svg" alt="" className="login-logo" />
           <h1>StorageWatch</h1>
           <p>Monitor your macOS storage with AI-powered insights</p>
           {/* Come back to the page that asked, e.g. /connect with its query. */}
