@@ -5,7 +5,7 @@ reports capacity, throughput, APFS layout, disk health, shared volumes and accou
 five seconds; a web dashboard and a native menu bar app turn that into alerts and
 answers.
 
-**Live:** [storagewatch.tech](https://storagewatch.tech) · **License:** [MIT](LICENSE)
+**Live:** [storagewatch.tech](https://storagewatch.tech) 
 
 ## Contents
 
