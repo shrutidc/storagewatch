@@ -12,6 +12,7 @@ import shutil
 import sys
 import threading
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -270,8 +271,17 @@ def get_apfs_containers():
         if c.get("CapacityCeiling", 0) < 10_000_000_000:
             continue
 
+        # Six sequential `diskutil info` calls cost ~690 ms; run concurrently
+        # they cost about as much as the slowest one. They are independent
+        # processes reading the same static layout, so there is nothing to
+        # serialise them for.
+        raw_volumes = c.get("Volumes", [])
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            details = list(pool.map(get_apfs_volume_detail,
+                                    [v.get("DeviceIdentifier", "") for v in raw_volumes]))
+
         volumes = []
-        for v in c.get("Volumes", []):
+        for v, detail in zip(raw_volumes, details):
             device = v.get("DeviceIdentifier", "")
             volume = {
                 "name": v.get("Name", "Unknown"),
@@ -284,7 +294,7 @@ def get_apfs_containers():
                 "capacity_in_use": v.get("CapacityInUse", 0),
                 "capacity_quota": v.get("CapacityQuota", 0),
                 "capacity_reserve": v.get("CapacityReserve", 0),
-                **get_apfs_volume_detail(device),
+                **detail,
             }
             # "disk3s1s1" is a snapshot of "disk3s1": the machine boots from it
             # while the volume underneath stays unmounted.
