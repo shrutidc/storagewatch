@@ -6,6 +6,10 @@ A Python agent samples the machine's volumes every 5 seconds and POSTs telemetry
 FastAPI backend, which stores it in Tiger Data (TimescaleDB), detects anomalies, and
 serves it to an Auth0-protected React dashboard with AI-assisted analysis.
 
+**Further reading:** [Memory.md](Memory.md) explains the system from scratch, including
+the APFS model that drives most of its behaviour. [Decisions.md](Decisions.md) records
+why the code is shaped the way it is. [Flow.md](Flow.md) traces the runtime paths.
+
 ## Quick Start
 
 ### Prerequisites
