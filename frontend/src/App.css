@@ -539,6 +539,41 @@ main {
   color: #555;
 }
 
+/* Small text buttons: the alerts' Clear, Clear all and Dismiss. */
+.link-btn {
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: #555;
+  cursor: pointer;
+}
+
+.link-btn:hover:not(:disabled) {
+  background: #f0f0f0;
+}
+
+.link-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.alert-overview li .link-btn {
+  margin-left: auto;
+}
+
+.alert-time .link-btn {
+  margin-left: 10px;
+}
+
+.alerts-toolbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 /* Alerts overview: one line per alert type; the full list sits in <details>. */
 .alert-overview {
   list-style: none;

@@ -221,6 +221,16 @@ def has_recent_alert(owner_sub, hostname, alert_type, severity):
         LIMIT 1
     """, (owner_sub, hostname, alert_type, severity)) is not None
 
+def resolve_alerts(owner_sub, alert_ids):
+    """Mark some of the user's alerts resolved — the dashboard's Clear buttons.
+    Owner-scoped because the ids come from the browser. They stay on record;
+    they only stop showing as open. Returns how many changed."""
+    return len(_all("""
+        UPDATE alerts SET resolved = TRUE
+        WHERE owner_sub = %s AND id = ANY(%s) AND resolved = FALSE
+        RETURNING id
+    """, (owner_sub, list(alert_ids))))
+
 def get_recent_alerts(owner_sub, limit=10, hostname=None):
     """Unresolved alerts for the user's machines, newest first. limit=None
     returns all of them (LIMIT NULL is no limit in Postgres)."""

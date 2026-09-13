@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from models import Metrics, MetricsResponse, Alert
 from database import (init_db, insert_metrics, get_latest_metrics, get_metrics_history,
-                      insert_alert, has_recent_alert, get_recent_alerts,
+                      insert_alert, has_recent_alert, get_recent_alerts, resolve_alerts,
                       get_all_volumes_latest, save_system_info, get_system_info,
                       get_hosts, create_agent_token, list_agent_tokens, get_dashboard,
                       get_agent_state, set_menu_bar_enabled, set_menu_bar_applied,
@@ -317,6 +317,20 @@ def create_agent_token_endpoint(data: dict = None,
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"token": token, "label": label}
+
+@app.post("/api/alerts/resolve")
+def resolve_alerts_endpoint(data: dict, user: dict = Depends(require_user)):
+    """Mark alerts resolved when an administrator clears them on the dashboard.
+    Nothing resolves an alert on its own, so this is the only way one closes."""
+    ids = data.get("ids")
+    if (not isinstance(ids, list) or not ids or len(ids) > 1000
+            or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids)):
+        raise HTTPException(status_code=400, detail="ids must be a list of 1 to 1000 alert ids")
+    try:
+        resolved = resolve_alerts(user["sub"], ids)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"resolved": resolved}
 
 @app.post("/api/alerts/report")
 def report_alert(data: dict, owner_sub: str = Depends(require_agent)):

@@ -211,6 +211,15 @@ far above background activity, far below the bulk writes an administrator cares 
 (the demo's `mkfile 2g` runs at hundreds of MB/s). The dashboard also leads with an
 overview — one line per alert type — and keeps the full list in a drop-down.
 
+### Alerts are cleared by hand
+
+Nothing resolved an alert — the column existed, nothing set it — so every alert stayed
+open forever. Clearing is deliberately manual rather than automatic: an administrator
+decides an alert has been dealt with, per alert (Dismiss), per type (Clear) or all at
+once (Clear all, confirmed). `POST /api/alerts/resolve` marks only the caller's own
+alerts and keeps them on record; they just stop showing as open on the dashboard, in
+the menu bar and in the assistant's context.
+
 ### Missing secrets abort startup
 
 Absent `AUTH0_DOMAIN` or `AUTH0_AUDIENCE`, the process exits. Failing

@@ -176,6 +176,7 @@ also serves the dashboard's static files on unmatched paths — see above.)
 | GET | `/api/metrics/history?limit=N&filesystem=/` | user | Last N samples for one volume, newest first (defaults: 100, `/`) |
 | GET | `/api/volumes` | user | Latest sample per mounted volume |
 | GET | `/api/alerts` | user | Unresolved alerts, newest first |
+| POST | `/api/alerts/resolve` | user | Mark alerts resolved (`{"ids": [...]}`) — the dashboard's Clear, Clear all and Dismiss buttons |
 | POST | `/api/alerts/report` | agent | Agent-side alert submission |
 | POST | `/api/system-info` | agent | Store physical disk / APFS container inventory, block health and shared volumes |
 | POST | `/api/user-usage` | agent | Store one sizing pass; runs the per-user alert rules |
