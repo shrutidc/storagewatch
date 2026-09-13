@@ -52,7 +52,7 @@ flowchart LR
     M["Menu bar app"]
     C -- "status.json" --> M
   end
-  subgraph Server["storagewatch.tech · Render"]
+  subgraph Server["Backend host · Render or Vultr"]
     A["FastAPI backend"]
     UI["React dashboard"]
     A --> DB[("Tiger Data<br/>TimescaleDB")]
@@ -66,7 +66,7 @@ flowchart LR
 | Component | Runs on | Role |
 |---|---|---|
 | `collector/` | Each monitored Mac | Samples volumes, disks, APFS, shares and accounts; reports to the backend |
-| `backend/` | Render (Docker) | Stores telemetry, evaluates alerts, serves the API, the dashboard and the installer |
+| `backend/` | Render or Vultr (Docker) | Stores telemetry, evaluates alerts, serves the API, the dashboard and the installer |
 | `frontend/` | Browser | Single-page React dashboard with Auth0 sign-in |
 | `menubar/` | Each monitored Mac | SwiftUI menu bar app fed by the collector's status file |
 
@@ -87,7 +87,8 @@ The installer:
 4. registers the collector and the menu bar app to start at every login.
 
 Data appears on the dashboard within seconds. Until a Mac is connected, the dashboard
-shows this command with a **Copy** button.
+shows this command with a **Copy** button. Running your own server? Use the command
+under [Deployment](#deployment), which points the installer at your domain.
 
 The collector runs on any macOS with Python 3.9 or later; the menu bar app needs
 macOS 13 or later.
@@ -193,23 +194,90 @@ for builds. These values are public by design; the Auth0 client secret never bel
 
 ## Deployment
 
-The backend serves the built dashboard itself, so the browser talks to a single origin
-with no CORS or proxy. `render.yaml` deploys both as one Docker service: the image
-builds the dashboard with Node and serves it, together with the API, from Python.
+The whole app ships as one Docker image (`Dockerfile`). It builds the dashboard with
+Node and serves it — with the API and the installer downloads — from Python on port
+`8000`, or `$PORT` if set. The browser talks to a single origin, so there is no CORS or
+proxy to configure, and any host that runs a container works. Two are documented here.
+
+Whichever you choose:
+
+- Add the production URL to the Auth0 application's callback, logout and web-origin
+  lists.
+- The dashboard's Auth0 settings are built into the image from
+  `frontend/.env.production`; edit that file before building if you use a different
+  Auth0 tenant.
+- On any domain other than `storagewatch.tech`, install the collector on each Mac with
+  your own domain:
+
+  ```bash
+  curl -fsSL https://your-domain/install.sh | STORAGEWATCH_URL=https://your-domain sh
+  ```
+
+### Render
+
+`render.yaml` is a ready-made Blueprint.
 
 1. In Render, choose **New → Blueprint** and select this repository. Enter
    `TIGER_DATABASE_URL` and `BACKBOARD_API_KEY` when prompted.
 2. Add your domain under **Settings → Custom Domains** and create the DNS record Render
    gives you.
-3. Add the production URL to the Auth0 application's callback, logout and web-origin
-   lists.
-4. Install the collector on each Mac — see [Monitor a Mac](#monitor-a-mac).
 
-Every push to `main` redeploys. On Render's free tier the service sleeps after about 15
-minutes without traffic; a running collector reports every five seconds and keeps it
-awake.
+Every push to `main` redeploys. On the free tier the service sleeps after about 15
+minutes without traffic and has a tenth of a CPU; a running collector reports every five
+seconds and keeps it awake.
 
-To run a production build anywhere else:
+### Vultr
+
+A Vultr Cloud Compute instance runs the same image, with Caddy in front for automatic
+HTTPS. It never sleeps and gives the backend a full virtual CPU.
+
+1. Deploy a **Cloud Compute** instance running Ubuntu 24.04. 1 vCPU with 2 GB of memory
+   builds the image comfortably. Allow inbound TCP 22, 80 and 443 in its firewall group.
+2. Point your domain at the instance with an `A` record for its public IPv4 address.
+3. On the instance, install Docker, open the web ports if `ufw` is enabled, and build the
+   image:
+
+   ```bash
+   curl -fsSL https://get.docker.com | sh
+   sudo ufw allow 80,443/tcp
+   git clone https://github.com/shrutidc/storagewatch.git && cd storagewatch
+   docker build -t storagewatch .
+   ```
+
+4. Put the backend's settings (see [Configuration](#configuration)) in
+   `/etc/storagewatch.env`:
+
+   ```bash
+   TIGER_DATABASE_URL=postgres://user:password@host:port/dbname?sslmode=require
+   BACKBOARD_API_KEY=your-backboard-key
+   AUTH0_DOMAIN=your-tenant.us.auth0.com
+   AUTH0_AUDIENCE=storagewatch-api
+   ```
+
+5. Start the app, reachable only from the instance itself, and Caddy, which obtains and
+   renews a TLS certificate for your domain:
+
+   ```bash
+   docker run -d --name storagewatch --restart unless-stopped \
+     --env-file /etc/storagewatch.env -p 127.0.0.1:8000:8000 storagewatch
+   docker run -d --name caddy --restart unless-stopped --network host \
+     -v caddy_data:/data caddy caddy reverse-proxy --from your-domain --to localhost:8000
+   ```
+
+6. Check it: `curl https://your-domain/health` should answer `{"status":"ok"}`.
+
+To deploy a new version:
+
+```bash
+cd storagewatch && git pull && docker build -t storagewatch .
+docker rm -f storagewatch
+docker run -d --name storagewatch --restart unless-stopped \
+  --env-file /etc/storagewatch.env -p 127.0.0.1:8000:8000 storagewatch
+```
+
+### Anywhere else
+
+To run a production build without Docker:
 
 ```bash
 cd frontend && npm run build      # outputs frontend/dist
