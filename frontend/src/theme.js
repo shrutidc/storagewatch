@@ -23,8 +23,27 @@ export function resolveTheme(choice) {
   return choice === 'system' ? (media().matches ? 'dark' : 'light') : choice
 }
 
+// Long enough to read as a fade, short enough not to feel like waiting.
+const FADE_MS = 260
+let fadeTimer
+
+// The transition is applied by a class held only while the swap happens, not
+// by a permanent rule: a standing `transition` on every element would also
+// slow every hover and focus change on the page.
+function fade(set) {
+  const root = document.documentElement
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    set()
+    return
+  }
+  root.classList.add('theme-fading')
+  set()
+  clearTimeout(fadeTimer)
+  fadeTimer = setTimeout(() => root.classList.remove('theme-fading'), FADE_MS)
+}
+
 export function applyTheme(choice) {
-  document.documentElement.setAttribute('data-theme', resolveTheme(choice))
+  fade(() => document.documentElement.setAttribute('data-theme', resolveTheme(choice)))
   try {
     localStorage.setItem(KEY, choice)
   } catch {
@@ -39,7 +58,7 @@ export function initTheme() {
   document.documentElement.setAttribute('data-theme', resolveTheme(choice))
   media().addEventListener('change', () => {
     if (readTheme() === 'system') {
-      document.documentElement.setAttribute('data-theme', resolveTheme('system'))
+      fade(() => document.documentElement.setAttribute('data-theme', resolveTheme('system')))
     }
   })
   return choice

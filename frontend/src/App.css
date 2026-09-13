@@ -129,6 +129,15 @@ body {
   padding: 20px 0;
   display: flex;
   flex-direction: column;
+  /* Stays put while the page scrolls, so switching to Settings never means
+     scrolling back to the top first. Sticky rather than fixed: it keeps its
+     place in the flex row, so the main column needs no offset to avoid it. */
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  /* Its own scrollbar only if the links ever outgrow a short window. */
+  overflow-y: auto;
 }
 
 .sidebar-title {
@@ -163,55 +172,12 @@ body {
   min-width: 0;
 }
 
-header {
-  background: var(--surface);
-  padding: 20px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 0 0 1px var(--surface-border), 0 1px 3px var(--shadow);
-}
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
 
-.status-badge {
-  padding: 6px 12px;
-  border-radius: 20px;
-  color: var(--on-accent);
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
 
-.user-info {
-  display: flex;
-  gap: 15px;
-  align-items: center;
-}
 
-.user-info span {
-  font-size: 14px;
-  color: var(--text-muted);
-}
 
-.user-info button {
-  padding: 8px 16px;
-  background: var(--surface-muted);
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background 0.2s;
-}
 
-.user-info button:hover {
-  background: var(--border);
-}
 
 main {
   padding: 20px;
@@ -426,55 +392,43 @@ main {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  padding: 12px 20px;
-  background: var(--accent);
-  color: var(--on-accent);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 22px;
+  /* White in both themes, like the sparkle mark it carries: this is the one
+     control that should read as the assistant rather than as the dashboard. */
+  background: #ffffff;
+  color: #1b1b1f;
   border: none;
-  border-radius: 24px;
+  border-radius: 999px;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: 0 2px 8px var(--shadow-3);
+  font-size: 15px;
+  font-weight: 500;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.10);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
   z-index: 100;
 }
 
 .chat-toggle:hover {
-  background: var(--accent-2);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.24), 0 1px 3px rgba(0,0,0,0.12);
 }
 
-.chat-widget {
-  position: fixed;
-  bottom: 70px;
-  right: 20px;
-  width: 340px;
-  max-height: 480px;
-  background: var(--surface);
-  border-radius: 8px;
-  box-shadow: 0 4px 20px var(--shadow-4);
-  display: flex;
-  flex-direction: column;
-  z-index: 100;
-  overflow: hidden;
+.chat-toggle:active {
+  transform: translateY(0);
 }
 
-.chat-widget-header {
-  padding: 12px 15px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 600;
-  font-size: 14px;
+/* Once open the label is redundant — the panel above it says what it is — so
+   it collapses to a round close button. */
+.chat-toggle.open {
+  padding: 12px;
+  border-radius: 50%;
 }
 
-.chat-widget .chat-messages {
-  flex: 1;
-  margin-bottom: 0;
-  border-radius: 0;
-}
 
-.chat-widget .chat-input-row {
-  padding: 10px;
-  border-top: 1px solid var(--border-faint);
-}
+
+
 
 .explain-btn {
   padding: 10px 20px;
@@ -498,44 +452,11 @@ main {
   cursor: not-allowed;
 }
 
-.chat-messages {
-  max-height: 300px;
-  overflow-y: auto;
-  margin-bottom: 15px;
-  padding: 10px;
-  background: var(--bg);
-  border-radius: 4px;
-}
 
-.chat-message {
-  padding: 8px 0;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text);
-}
 
-.chat-message.chat-user {
-  color: var(--text-2);
-}
 
-.chat-message.chat-assistant {
-  color: var(--text);
-  border-left: 3px solid var(--accent);
-  padding-left: 10px;
-}
 
-.chat-input-row {
-  display: flex;
-  gap: 8px;
-}
 
-.chat-input {
-  flex: 1;
-  padding: 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  font-size: 14px;
-}
 
 .alert-ai-explanation {
   margin-top: 8px;
@@ -640,11 +561,6 @@ main {
   color: var(--text);
 }
 
-.header-host {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-3);
-}
 
 /* Small text buttons: the alerts' Clear, Clear all and Dismiss. */
 .link-btn {
@@ -870,4 +786,386 @@ main {
 .theme-option.active {
   background: var(--accent);
   color: var(--on-accent);
+}
+
+/* Dark only: Recharts draws its grid as a fixed light dash, which on a dark
+   ground reads brighter than the data and cuts across every line. The axis
+   ticks still carry the scale, so the grid is removed rather than dimmed.
+   Light mode keeps it — there it sits behind the lines as intended. */
+[data-theme="dark"] .recharts-cartesian-grid {
+  display: none;
+}
+
+/* Held only while the theme is swapping (see theme.js). A standing transition
+   on every element would also slow every hover and focus change, so this is
+   added, then removed once the fade has run. `!important` because it has to
+   win over the shorter per-element transitions already on buttons and links. */
+.theme-fading,
+.theme-fading *,
+.theme-fading *::before,
+.theme-fading *::after {
+  transition: background-color 260ms ease,
+              background-image 260ms ease,
+              color 260ms ease,
+              border-color 260ms ease,
+              box-shadow 260ms ease,
+              fill 260ms ease,
+              stroke 260ms ease !important;
+}
+
+/* Sidebar footer: pushed to the bottom of the flex column, so it sits at the
+   foot of the sticky sidebar and stays reachable at any scroll position. */
+.sidebar-footer {
+  margin-top: auto;
+  padding: 16px 20px 4px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebar-user {
+  color: var(--on-accent);
+  font-size: 14px;
+  font-weight: 600;
+  /* A long display name must not widen the sidebar or wrap onto three lines. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-logout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.06);
+  color: var(--on-accent);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.sidebar-logout:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.18);
+}
+
+/* Route changes fade in rather than snapping. The element is re-keyed on the
+   path, so the animation replays on every navigation. */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.page {
+  animation: page-enter 220ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page { animation: none; }
+}
+
+/* Recharts hard-codes its tick colour, which does not follow the theme. */
+.recharts-cartesian-axis-tick text,
+.recharts-label {
+  fill: var(--text-dim);
+}
+
+/* The default tooltip is white with a white border in both themes. */
+.recharts-default-tooltip {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 6px;
+  color: var(--text) !important;
+}
+
+.recharts-tooltip-label {
+  color: var(--text-muted) !important;
+}
+
+/* The machine's identity and health, as one card above the page content. It
+   sits outside the animated page wrapper: it describes the machine, not the
+   view, so it should not fade on every navigation. */
+.system-card {
+  position: relative;
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px var(--surface-border), 0 1px 3px var(--shadow);
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.system-host {
+  display: block;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* The filled pill the header used to carry, now centred under the hostname.
+   Colour is set inline from the status, and the word stays in it — the badge
+   has to read the same to anyone who cannot tell the hues apart. */
+.system-status {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Absolute so the hostname stays centred on the card, not on what is left of
+   it once the picker is placed. */
+.system-card .host-select {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+
+@media (max-width: 640px) {
+  .system-card .host-select {
+    position: static;
+    display: block;
+    margin: 0 auto 10px;
+  }
+}
+
+/* "Live" marker beside a section title. */
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  color: var(--bad-text-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* A dot blinking forever is exactly the kind of motion this setting is for. */
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+}
+
+/* --- assistant panel ----------------------------------------------------- */
+
+.chat-widget {
+  position: fixed;
+  bottom: 82px;
+  right: 20px;
+  width: 380px;
+  max-height: min(560px, calc(100vh - 120px));
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: 0 0 0 1px var(--surface-border), 0 12px 40px var(--shadow-4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 100;
+  animation: chat-in 180ms ease-out;
+}
+
+@keyframes chat-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-widget { animation: none; }
+}
+
+/* A quiet title row rather than a solid bar of brand colour: the panel is a
+   place to read answers, and a heavy header competes with them. */
+.chat-widget-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-faint);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* --- empty state --- */
+
+.chat-empty {
+  margin: auto 0;
+  padding: 8px 0;
+}
+
+.chat-empty-title {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.chat-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  align-items: flex-start;
+}
+
+.chat-suggestion {
+  padding: 8px 12px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.chat-suggestion:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* --- messages --- */
+
+.chat-row {
+  display: flex;
+}
+
+.chat-row-user { justify-content: flex-end; }
+.chat-row-assistant { justify-content: flex-start; }
+
+.chat-bubble {
+  max-width: 85%;
+  padding: 9px 13px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* The speaker is shown by side and fill, so the old "You:" / "AI:" prefixes
+   are gone — they were repeated on every line and said nothing extra. */
+.chat-bubble-user {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-bottom-right-radius: 4px;
+}
+
+.chat-bubble-assistant {
+  background: var(--surface-alt);
+  color: var(--text);
+  border: 1px solid var(--border-faint);
+  border-bottom-left-radius: 4px;
+}
+
+/* --- typing indicator --- */
+
+.chat-typing {
+  display: flex;
+  gap: 4px;
+  padding: 13px;
+}
+
+.chat-typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  animation: chat-blink 1.2s ease-in-out infinite;
+}
+
+.chat-typing span:nth-child(2) { animation-delay: 0.15s; }
+.chat-typing span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes chat-blink {
+  0%, 80%, 100% { opacity: 0.25; }
+  40%           { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-typing span { animation: none; opacity: 0.6; }
+}
+
+/* --- composer --- */
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--border-faint);
+}
+
+.chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text);
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.chat-input::placeholder { color: var(--text-dimmer); }
+
+.chat-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.chat-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.chat-send:hover:not(:disabled) { background: var(--accent-2); }
+
+.chat-send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

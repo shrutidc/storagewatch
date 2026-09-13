@@ -104,7 +104,10 @@ function App() {
       setUsers(data.users || [])
       // Already oldest-first, so time reads left-to-right.
       setHistory(data.history.map(m => ({
-        time: new Date(m.time).toLocaleTimeString(),
+        // Epoch milliseconds, not a pre-formatted string: the axis needs a
+        // short label and the tooltip a precise one, and a string can only be
+        // one of those.
+        time: new Date(m.time).getTime(),
         // Numbers, not toFixed() strings: Recharts sizes the axis from these,
         // and strings compare as text ("9.8" > "15.2"), clipping the line.
         read: Math.round(m.read_bytes_per_sec / 1e5) / 10,
@@ -176,43 +179,51 @@ function App() {
         <h2 className="sidebar-title">StorageWatch</h2>
         <NavLink to="/" end className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Dashboard</NavLink>
         <NavLink to="/settings" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Settings</NavLink>
+
+        {/* Pushed to the bottom of the sidebar, which is sticky, so signing out
+            is reachable from anywhere on a long page. */}
+        <div className="sidebar-footer">
+          <span className="sidebar-user" title={user.name}>{user.name}</span>
+          {/* Without returnTo, Auth0 sends everyone to the first Allowed Logout
+              URL in the tenant — which was http://localhost:3000. */}
+          <button
+            className="sidebar-logout"
+            onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+                 strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            Log out
+          </button>
+        </div>
       </nav>
 
       <div className="main-column">
-        <header>
-          <div className="header-left">
-            {metrics && (
-              <>
-                <div className="status-badge" style={{ backgroundColor: getStatusColor() }}>
-                  System {getSystemStatus()}
-                </div>
-                <span className="header-host">{metrics.hostname}</span>
-              </>
-            )}
-          </div>
-          <div className="user-info">
-            {hosts.length > 1 && (
-              <select
-                className="host-select"
-                value={selectedHost || ''}
-                onChange={e => setSelectedHost(e.target.value || null)}
-              >
-                <option value="">Most recent machine</option>
-                {hosts.map(h => (
-                  <option key={h.hostname} value={h.hostname}>{h.hostname}</option>
-                ))}
-              </select>
-            )}
-            <span>{user.name}</span>
-            {/* Without returnTo, Auth0 sends everyone to the first Allowed Logout
-                URL in the tenant — which was http://localhost:3000. */}
-            <button onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}>
-              Logout
-            </button>
-          </div>
-        </header>
-
         <main>
+          {metrics && (
+            <div className="system-card">
+              {hosts.length > 1 && (
+                <select
+                  className="host-select"
+                  value={selectedHost || ''}
+                  onChange={e => setSelectedHost(e.target.value || null)}
+                >
+                  <option value="">Most recent machine</option>
+                  {hosts.map(h => (
+                    <option key={h.hostname} value={h.hostname}>{h.hostname}</option>
+                  ))}
+                </select>
+              )}
+              <span className="system-host">{metrics.hostname}</span>
+              <span className="system-status" style={{ backgroundColor: getStatusColor() }}>
+                System {getSystemStatus()}
+              </span>
+            </div>
+          )}
+
           {authError ? (
             <div className="detail-section">
               <h2>Cannot authenticate to the API</h2>
@@ -227,9 +238,11 @@ function App() {
           ) : (metrics || onSettings || onConnect) ? (
             // Settings and Connect must render without metrics: a new user has
             // no data until their first collector connects.
-            <Outlet context={{ metrics, history, alerts, volumes, systemInfo, preferences,
-                               users, lastRefresh, hosts, authConfig,
-                               installCommand: INSTALL_COMMAND }} />
+            <div className="page" key={location.pathname}>
+              <Outlet context={{ metrics, history, alerts, volumes, systemInfo, preferences,
+                                 users, lastRefresh, hosts, authConfig,
+                                 installCommand: INSTALL_COMMAND }} />
+            </div>
           ) : !fetched ? (
             <p className="no-data">Loading metrics…</p>
           ) : (
@@ -250,36 +263,98 @@ function App() {
         </main>
       </div>
 
-      <button className="chat-toggle" onClick={() => setChatOpen(o => !o)}>
-        {chatOpen ? '✕' : '💬 Ask AI'}
+      <button
+        className={`chat-toggle${chatOpen ? ' open' : ''}`}
+        onClick={() => setChatOpen(o => !o)}
+        aria-label={chatOpen ? 'Close the assistant' : 'Ask Anything'}
+      >
+        {chatOpen ? (
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+               strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        ) : (
+          <>
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              {/* The gradient id must be unique on the page, and this button is
+                  rendered once, so a fixed id is safe here. */}
+              <linearGradient id="sparkle" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#e935c1" />
+                <stop offset="100%" stopColor="#4f46e5" />
+              </linearGradient>
+              <path fill="url(#sparkle)"
+                    d="M11.2 2.6a.6.6 0 0 1 1.12 0l1.36 3.5a4 4 0 0 0 2.3 2.3l3.5 1.36a.6.6 0 0 1 0 1.12l-3.5 1.36a4 4 0 0 0-2.3 2.3l-1.36 3.5a.6.6 0 0 1-1.12 0l-1.36-3.5a4 4 0 0 0-2.3-2.3l-3.5-1.36a.6.6 0 0 1 0-1.12l3.5-1.36a4 4 0 0 0 2.3-2.3z" />
+              <path fill="url(#sparkle)"
+                    d="M17.9 16.1a.35.35 0 0 1 .66 0l.53 1.37a2 2 0 0 0 1.14 1.14l1.37.53a.35.35 0 0 1 0 .66l-1.37.53a2 2 0 0 0-1.14 1.14l-.53 1.37a.35.35 0 0 1-.66 0l-.53-1.37a2 2 0 0 0-1.14-1.14l-1.37-.53a.35.35 0 0 1 0-.66l1.37-.53a2 2 0 0 0 1.14-1.14z" />
+            </svg>
+            Ask Anything
+          </>
+        )}
       </button>
 
       {chatOpen && (
         <div className="chat-widget">
-          <div className="chat-widget-header">StorageWatch AI</div>
+          <div className="chat-widget-header">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <linearGradient id="chat-sparkle" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#e935c1" />
+                <stop offset="100%" stopColor="#4f46e5" />
+              </linearGradient>
+              <path fill="url(#chat-sparkle)"
+                    d="M11.2 2.6a.6.6 0 0 1 1.12 0l1.36 3.5a4 4 0 0 0 2.3 2.3l3.5 1.36a.6.6 0 0 1 0 1.12l-3.5 1.36a4 4 0 0 0-2.3 2.3l-1.36 3.5a.6.6 0 0 1-1.12 0l-1.36-3.5a4 4 0 0 0-2.3-2.3l-3.5-1.36a.6.6 0 0 1 0-1.12l3.5-1.36a4 4 0 0 0 2.3-2.3z" />
+            </svg>
+            StorageWatch AI
+          </div>
+
           <div className="chat-messages">
             {chatMessages.length === 0 ? (
-              <p className="no-alerts">Ask about your storage — available on every page.</p>
+              <div className="chat-empty">
+                <p className="chat-empty-title">Ask about this Mac</p>
+                {/* Concrete openers: a blank box invites nothing, and these are
+                    questions the telemetry on this page can actually answer. */}
+                <div className="chat-suggestions">
+                  {['What is using my disk space?',
+                    'Is my SSD healthy?',
+                    'Why did write activity spike?'].map(q => (
+                    <button key={q} type="button" className="chat-suggestion"
+                            onClick={() => setChatInput(q)}>
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ) : (
               chatMessages.map((m, i) => (
-                <div key={i} className={`chat-message chat-${m.role}`}>
-                  <strong>{m.role === 'user' ? 'You' : 'AI'}:</strong> {m.content}
+                <div key={i} className={`chat-row chat-row-${m.role}`}>
+                  <div className={`chat-bubble chat-bubble-${m.role}`}>{m.content}</div>
                 </div>
               ))
             )}
-            {chatSending && <div className="chat-message chat-assistant"><em>Thinking...</em></div>}
+            {chatSending && (
+              <div className="chat-row chat-row-assistant">
+                <div className="chat-bubble chat-bubble-assistant chat-typing">
+                  <span /><span /><span />
+                </div>
+              </div>
+            )}
           </div>
+
           <form className="chat-input-row" onSubmit={handleSendChat}>
             <input
               type="text"
               className="chat-input"
               value={chatInput}
               onChange={e => setChatInput(e.target.value)}
-              placeholder="Ask a question..."
+              placeholder="Ask a question…"
               disabled={chatSending}
             />
-            <button type="submit" className="explain-btn" disabled={chatSending || !chatInput.trim()}>
-              Send
+            <button type="submit" className="chat-send"
+                    disabled={chatSending || !chatInput.trim()} aria-label="Send">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+                   strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="12" y1="19" x2="12" y2="5" />
+                <polyline points="5 12 12 5 19 12" />
+              </svg>
             </button>
           </form>
         </div>
