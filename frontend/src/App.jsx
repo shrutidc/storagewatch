@@ -170,6 +170,7 @@ function App() {
         <LoginLabels />
         <LoginParticles />
         <div className="login-box">
+          <img src="/logo.svg" alt="" className="login-logo" />
           <h1>StorageWatch</h1>
           <p>Monitor your macOS storage with AI-powered insights</p>
           {/* Come back to the page that asked, e.g. /connect with its query. */}
@@ -196,7 +197,10 @@ function App() {
   return (
     <div className="app-shell">
       <nav className="sidebar">
-        <h2 className="sidebar-title">StorageWatch</h2>
+        <h2 className="sidebar-title">
+          <img src="/logo.svg" alt="" className="brand-logo" />
+          StorageWatch
+        </h2>
         <NavLink to="/" end className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Dashboard</NavLink>
         <NavLink to="/settings" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Settings</NavLink>
 
