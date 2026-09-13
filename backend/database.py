@@ -294,6 +294,64 @@ def get_agent_state(owner_sub, hostname):
     """, {"owner": owner_sub, "host": hostname})["doc"]
 
 
+# --- who is using the disk --------------------------------------------------
+
+def insert_user_usage(owner_sub, hostname, users, measured_at):
+    """Record one sizing pass. Users with no measurement yet are skipped, so a
+    freshly started collector doesn't write a history of zeroes that later
+    reads as a user who deleted everything."""
+    rows = []
+    for u in users:
+        if not u.get("used_bytes"):
+            continue
+        quota = u.get("quota") or {}
+        # A user can hold quotas on several filesystems; the tightest one is
+        # what will actually stop them writing.
+        limits = quota.get("filesystems") or []
+        soft = min((f["soft_limit_bytes"] for f in limits if f["soft_limit_bytes"]), default=0)
+        hard = min((f["hard_limit_bytes"] for f in limits if f["hard_limit_bytes"]), default=0)
+        rows.append((measured_at, owner_sub, hostname, u["username"], u.get("uid"),
+                     u.get("home"), u["used_bytes"], bool(quota.get("enabled")),
+                     soft, hard, sum(f.get("file_count", 0) for f in limits),
+                     json.dumps(u.get("largest_folders") or [])))
+    if not rows:
+        return 0
+    with connection() as conn, conn.cursor() as cur:
+        cur.executemany("""
+            INSERT INTO user_usage (time, owner_sub, hostname, username, uid, home,
+                                    used_bytes, quota_enabled, quota_soft_bytes,
+                                    quota_hard_bytes, file_count, largest_folders)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, rows)
+    return len(rows)
+
+def get_user_usage_latest(owner_sub, hostname=None):
+    """Each user's most recent measurement, with how much they have added since
+    the one before it — the growth that identifies a user filling a volume."""
+    return _all("""
+        SELECT DISTINCT ON (username)
+               username, uid, home, used_bytes, quota_enabled, quota_soft_bytes,
+               quota_hard_bytes, file_count, largest_folders, time,
+               used_bytes - lag(used_bytes) OVER (PARTITION BY username ORDER BY time)
+                   AS growth_bytes,
+               lag(time) OVER (PARTITION BY username ORDER BY time) AS previous_time
+        FROM user_usage
+        WHERE owner_sub = %s AND (%s::text IS NULL OR hostname = %s)
+        ORDER BY username, time DESC
+    """, (owner_sub, hostname, hostname))
+
+def get_user_usage_history(owner_sub, username, hostname=None, limit=100):
+    """One user's measurements over time, oldest first."""
+    return _all("""
+        SELECT * FROM (
+            SELECT time, used_bytes FROM user_usage
+            WHERE owner_sub = %s AND username = %s
+              AND (%s::text IS NULL OR hostname = %s)
+            ORDER BY time DESC LIMIT %s
+        ) recent ORDER BY time
+    """, (owner_sub, username, hostname, hostname, limit))
+
+
 # --- dashboard -------------------------------------------------------------
 
 def get_dashboard(owner_sub, hostname=None):
@@ -332,6 +390,20 @@ def get_dashboard(owner_sub, hostname=None):
           -- Keyed on the machine actually being shown, which is not the
           -- requested host when the dashboard is following whichever machine
           -- reported most recently. Null when none has reported at all.
+          -- Ordered by consumption: the question this answers is who is
+          -- filling the disk, so the biggest account is the first row.
+          'users', (SELECT coalesce(json_agg(u ORDER BY u.used_bytes DESC), '[]'::json) FROM (
+              SELECT DISTINCT ON (username)
+                     username, uid, home, used_bytes, quota_enabled,
+                     quota_soft_bytes, quota_hard_bytes, file_count,
+                     largest_folders, time,
+                     used_bytes - lag(used_bytes) OVER w AS growth_bytes,
+                     lag(time) OVER w AS previous_time
+              FROM user_usage
+              WHERE owner_sub = %(owner)s
+                AND (%(host)s::text IS NULL OR hostname = %(host)s)
+              WINDOW w AS (PARTITION BY username ORDER BY time)
+              ORDER BY username, time DESC) u),
           'preferences', (SELECT json_build_object(
                 'hostname', h.hostname,
                 'menu_bar_enabled', coalesce(p.menu_bar_enabled, TRUE),

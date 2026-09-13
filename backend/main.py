@@ -15,8 +15,9 @@ from database import (init_db, insert_metrics, get_latest_metrics, get_metrics_h
                       insert_alert, has_recent_alert, get_recent_alerts,
                       get_all_volumes_latest, save_system_info, get_system_info,
                       get_hosts, create_agent_token, list_agent_tokens, get_dashboard,
-                      get_agent_state, set_menu_bar_enabled, set_menu_bar_applied)
-from alerts import detect_anomalies
+                      get_agent_state, set_menu_bar_enabled, set_menu_bar_applied,
+                      insert_user_usage, get_user_usage_latest, get_user_usage_history)
+from alerts import detect_anomalies, detect_user_anomalies
 from auth import require_user, require_agent, check_config
 
 # Handlers are plain `def`, not `async def`: they make blocking database and
@@ -148,6 +149,66 @@ def get_system_info_endpoint(hostname: str | None = None,
     if not info:
         raise HTTPException(status_code=404, detail="No system info received yet")
     return info
+
+@app.post("/api/user-usage")
+def post_user_usage(data: dict, owner_sub: str = Depends(require_agent)):
+    """Receive one sizing pass: who holds how much, and under what quota.
+
+    Home directories take minutes to walk, so this arrives on the collector's
+    own slow schedule rather than with the five-second telemetry.
+    """
+    hostname = data.get("hostname", "unknown")
+    users = data.get("users") or []
+    # Null while the first background pass is still running, which is not the
+    # same as a pass that measured nothing.
+    measured_at = data.get("measured_at")
+    if not measured_at:
+        return {"status": "ok", "stored": 0, "detail": "no completed measurement yet"}
+
+    try:
+        stored = insert_user_usage(owner_sub, hostname, users, measured_at)
+        # Re-read rather than trusting the payload: growth is the difference
+        # from the previous stored pass, which only the database knows.
+        latest = [dict(r) for r in get_user_usage_latest(owner_sub, hostname)]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    for u in latest:
+        u["elapsed_hours"] = ((u["time"] - u["previous_time"]).total_seconds() / 3600
+                              if u.get("previous_time") else 0)
+
+    volume_used = sum(u["used_bytes"] or 0 for u in latest)
+    raised = 0
+    for user, anomaly in detect_user_anomalies(latest, volume_used):
+        if has_recent_alert(owner_sub, hostname, anomaly["type"], anomaly["severity"]):
+            continue
+        insert_alert(owner_sub=owner_sub, hostname=hostname,
+                     alert_type=anomaly["type"], severity=anomaly["severity"],
+                     message=anomaly["message"], metric_value=user.get("used_bytes"))
+        raised += 1
+    return {"status": "ok", "stored": stored, "alerts": raised}
+
+@app.get("/api/users")
+def get_users_endpoint(hostname: str | None = None, user: dict = Depends(require_user)):
+    """Each account's latest measured usage, quota and growth."""
+    try:
+        rows = [dict(r) for r in get_user_usage_latest(user["sub"], hostname)]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    for r in rows:
+        r["time"] = r["time"].isoformat() if r.get("time") else None
+        r["previous_time"] = r["previous_time"].isoformat() if r.get("previous_time") else None
+    return rows
+
+@app.get("/api/users/{username}/history")
+def get_user_history_endpoint(username: str, hostname: str | None = None,
+                              limit: int = 100, user: dict = Depends(require_user)):
+    """One account's usage over time, oldest first."""
+    try:
+        rows = get_user_usage_history(user["sub"], username, hostname, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return [{"time": r["time"].isoformat(), "used_bytes": r["used_bytes"]} for r in rows]
 
 @app.get("/api/dashboard")
 def get_dashboard_endpoint(hostname: str | None = None,

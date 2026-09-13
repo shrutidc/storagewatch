@@ -130,6 +130,44 @@ is matched to its volume by device prefix — `disk3s1s1` is a snapshot of `disk
 The assistant's prompt now states that the dashboard already shows this and tells it to
 point at the section rather than at a command.
 
+### A shared volume gets five seconds, then it is "not responding"
+
+`psutil.disk_partitions(all=False)` keeps only local devices, so NFS and SMB mounts were
+invisible to the dashboard — they are now enumerated by filesystem type and sampled like
+any other volume. That introduces a hazard the local disks never had: when an NFS server
+goes away, `statvfs` on its mountpoint blocks inside the kernel forever and cannot be
+interrupted, so a single dead share would stop the collector reporting anything at all.
+
+Every call against a share therefore runs on a worker thread with a five-second limit.
+The thread is abandoned rather than killed, because Python cannot kill one; it is a
+daemon, so it never holds the process open. The share is reported unreachable, which is a
+fact worth alerting on rather than a gap in the data.
+
+### Home directories are sized on a background thread
+
+`du -skx` over a 68 GB home took 77 seconds on the machine this was written on. Nothing
+that slow can live in a five-second loop, so sizing runs on its own thread every 30
+minutes and the loop only ever reads the last finished result. `measured_at` is null
+until the first pass completes, which the dashboard shows as "no measurement yet" rather
+than as a user who owns nothing.
+
+`du -kxd 2` costs no more than `du -skx` — the walk happens either way — and turns "this
+account has 68 GB" into "and here is where it is", which is the question asked next.
+
+### Per-user alerts name the account and the evidence, not a verdict
+
+The brief asks for alerts about "nefarious users". Intent cannot be read from telemetry,
+and guessing at it would produce an accusation the data does not support. Each rule
+instead reports something checkable: over a quota somebody set, growing faster than
+10 GB/hour, or holding more than 60% of everything in use. Growth is measured per hour so
+a delayed or missed sizing pass does not read as a spike.
+
+### I/O errors are counted since boot, so alerts fire on the rise
+
+`ioreg` reports cumulative error and retry counts. Alerting on any non-zero value would
+mean a disk that logged one retry a year ago raises an alert every sixty seconds for the
+rest of its life. The collector keeps the previous counts and reports only an increase.
+
 ### Missing secrets abort startup
 
 Absent `AUTH0_DOMAIN` or `AUTH0_AUDIENCE`, the process exits. Failing

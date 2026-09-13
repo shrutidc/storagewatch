@@ -116,3 +116,31 @@ CREATE TABLE IF NOT EXISTS host_preferences (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (owner_sub, hostname)
 );
+
+-- Who is using the disk, over time.
+--
+-- Sizing a home directory means walking it, so the agent measures on its own
+-- slow schedule (half-hourly by default) rather than per sample. That makes
+-- this low-volume enough for an ordinary table — a hypertable's chunking buys
+-- nothing at a few rows per user per hour — but it is a history, not a
+-- snapshot: growth between samples is what identifies a user filling a volume,
+-- and a single current figure could not show it.
+CREATE TABLE IF NOT EXISTS user_usage (
+    time TIMESTAMPTZ NOT NULL,
+    owner_sub TEXT NOT NULL,
+    hostname TEXT NOT NULL,
+    username TEXT NOT NULL,
+    uid INTEGER,
+    home TEXT,
+    used_bytes BIGINT,
+    quota_enabled BOOLEAN DEFAULT FALSE,
+    quota_soft_bytes BIGINT,
+    quota_hard_bytes BIGINT,
+    file_count BIGINT,
+    -- The largest folders inside the home directory, which comes free from
+    -- the same walk and answers "where did the space go?" without a second one.
+    largest_folders JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_usage_owner_host_time
+    ON user_usage (owner_sub, hostname, username, time DESC);

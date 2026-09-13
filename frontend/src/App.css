@@ -604,3 +604,15 @@ main {
 .wrap-anywhere {
   overflow-wrap: anywhere;
 }
+
+/* Quota fill inside a table cell: narrower and tighter than the page-level bar. */
+.quota-bar {
+  height: 6px;
+  margin: 0 0 4px;
+  max-width: 160px;
+}
+
+.growth-up { color: #c62828; font-weight: 600; }
+.growth-down { color: #2e7d32; font-weight: 600; }
+
+.over-quota { color: #c62828; font-weight: 600; }

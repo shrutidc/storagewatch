@@ -166,7 +166,10 @@ also serves the dashboard's static files on unmatched paths — see above.)
 | GET | `/api/volumes` | user | Latest sample per mounted volume |
 | GET | `/api/alerts` | user | Unresolved alerts, newest first |
 | POST | `/api/alerts/report` | agent | Agent-side alert submission |
-| POST | `/api/system-info` | agent | Store physical disk / APFS container inventory |
+| POST | `/api/system-info` | agent | Store physical disk / APFS container inventory, block health and shared volumes |
+| POST | `/api/user-usage` | agent | Store one sizing pass; runs the per-user alert rules |
+| GET | `/api/users` | user | Each account's latest usage, quota and growth |
+| GET | `/api/users/{username}/history` | user | One account's usage over time |
 | GET | `/api/system-info` | user | Read that inventory |
 | GET | `/api/dashboard` | user | Everything the dashboard shows, in one response built by one SQL query |
 | GET | `/api/hosts` | user | The caller's reporting machines, most recent first |
@@ -191,6 +194,9 @@ Created automatically from `backend/schema.sql`:
 - **`host_preferences`** — one row per machine: what the administrator chose in the
   dashboard (`menu_bar_enabled`) and what the collector on that machine last confirmed
   is true (`menu_bar_applied`). A machine with no row takes the defaults.
+- **`user_usage`** — home directory size, quota limits and the largest folders inside,
+  per user per sizing pass. A history rather than a snapshot: growth between passes is
+  what identifies an account filling a volume.
 
 Throughput is measured at the physical disk, since macOS exposes no per-volume I/O
 counters. The same reading is therefore attached to every volume in a sample.
@@ -202,6 +208,14 @@ counters. The same reading is therefore attached to every volume in a sample.
 | `used_percent >= 90` | critical |
 | `used_percent >= 80` | warning |
 | Write throughput > 4× the average of the previous 20 samples | warning |
+| A disk reported new I/O **errors** since the last check | critical |
+| A disk reported new I/O **retries** since the last check | warning |
+| A shared volume stopped answering | critical |
+| A user is over their hard quota | critical |
+| A user is over their soft quota, or within 10% of it | warning |
+| A user's data grew faster than 50 GB/hour | critical |
+| A user's data grew faster than 10 GB/hour | warning |
+| One account holds over 60% of everything in use | warning |
 
 The write baseline is kept per machine and needs 5 prior samples before it will fire,
 so a freshly started collector stays quiet for the first ~30 seconds. A condition that
@@ -215,6 +229,31 @@ read / write cards, then I/O performance with the graph, every alert, volumes, p
 disks and APFS containers. Questions about any of it go to the **Ask AI** chat.
 **Settings** lists connected Macs and the install command. Polling pauses while the tab
 is in the background.
+
+**Block storage health** reports, per disk, the I/O the hardware failed to complete
+(errors) or had to repeat (retries), its average service time in microseconds, and
+sustained IOPS and throughput. These come from the kernel's own block storage driver via
+`ioreg`, and move long before SMART stops saying "Verified" — which is all `diskutil`
+will tell you, and only once a disk is already failing.
+
+**Shared volumes** lists NFS, pNFS, SMB and AFP mounts with their server, export,
+protocol version and capacity, plus NFS client RPC counts by operation. Every call
+against a share has a five-second limit, so a server that has gone away is reported as
+not responding rather than stalling the collector — an unguarded `statvfs` on a dead NFS
+mount blocks in the kernel forever and would take the local disks down with it.
+
+**Users and quotas** shows each account's home directory size, its share of everything in
+use, quota limits from `quota(1)`, growth since the previous measurement, and the largest
+folders inside each home. Sizing means walking the directory — 77 seconds for a 68 GB
+home on the machine this was written on — so the collector measures on a background
+thread every 30 minutes (`USER_USAGE_INTERVAL_SECONDS`) and the page says when the
+reading was taken. macOS ships with quotas disabled, which the page states rather than
+leaving blank.
+
+On "nefarious users": an administrator cannot read intent from telemetry and this tool
+does not try to. What it reports is which account is consuming the space, how fast, and
+whether that is unlike the account's own recent history — each alert names the account
+and the evidence, and a person decides what it means.
 
 The APFS section carries what `diskutil apfs list` prints, so nobody has to open a
 terminal to read it: per volume the device identifier, **mount point**, roles, capacity,

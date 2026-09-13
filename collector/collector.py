@@ -1,6 +1,7 @@
 import psutil
 import requests
 import json
+import re
 import os
 import platform
 import subprocess
@@ -9,6 +10,7 @@ import plistlib
 import secrets
 import shutil
 import sys
+import threading
 import webbrowser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -39,7 +41,7 @@ def get_volume_info(mountpoint):
     """Everything diskutil knows about a mounted volume, in one call."""
     try:
         out = subprocess.run(
-            ["diskutil", "info", "-plist", mountpoint], capture_output=True
+            ["diskutil", "info", "-plist", mountpoint], capture_output=True, timeout=15
         ).stdout
         d = plistlib.loads(out)
     except Exception as e:
@@ -57,14 +59,25 @@ def get_volume_info(mountpoint):
     }
 
 def get_monitored_volumes():
-    """Real, user-relevant volumes: the boot volume and anything mounted under /Volumes.
+    """Real, user-relevant volumes: the boot volume, anything under /Volumes,
+    and every shared volume wherever it happens to be mounted.
 
     Excludes macOS's internal /System/Volumes/* container slices (VM, Preboot,
-    Update, etc.) which aren't independently meaningful to an end user.
+    Update, etc.) which aren't independently meaningful to an end user — but
+    a shared volume mounted under that path is still a shared volume, so the
+    network check comes first.
     """
     volumes = []
-    for p in psutil.disk_partitions(all=False):
-        if p.mountpoint == "/" or p.mountpoint.startswith("/Volumes/"):
+    try:
+        partitions = psutil.disk_partitions(all=True)
+    except Exception as e:
+        print(f"Error listing mounts: {e}")
+        return volumes
+
+    for p in partitions:
+        if p.fstype.lower() in NETWORK_FS_TYPES:
+            volumes.append(p.mountpoint)
+        elif p.mountpoint == "/" or p.mountpoint.startswith("/Volumes/"):
             volumes.append(p.mountpoint)
     return volumes
 
@@ -111,10 +124,12 @@ def collect_metrics():
             free = info["container_free"]
             used = total - free
         else:
-            try:
-                disk = psutil.disk_usage(mountpoint)
-            except Exception as e:
-                print(f"Error reading usage for {mountpoint}: {e}")
+            # Not a plain call: on a shared volume whose server has gone away
+            # this blocks inside the kernel forever, and the local disks would
+            # stop being reported along with it.
+            disk = with_timeout(lambda mp=mountpoint: psutil.disk_usage(mp), 5)
+            if disk is None:
+                print(f"✗ {mountpoint} did not answer within 5s — skipped this cycle")
                 continue
             total, used, free = disk.total, disk.used, disk.free
 
@@ -341,6 +356,437 @@ def get_io_totals():
     except Exception:
         return {}
 
+# --- block storage health ---------------------------------------------------
+
+def _first_bsd_name(node):
+    """The BSD disk a driver node belongs to, which sits on a child IOMedia."""
+    if node.get("BSD Name"):
+        return node["BSD Name"]
+    for child in node.get("IORegistryEntryChildren", []):
+        name = _first_bsd_name(child)
+        if name:
+            return name
+    return None
+
+def get_block_health():
+    """Per-disk I/O errors, retries and service time, straight from the kernel.
+
+    diskutil's SMART status is a single word — "Verified" — and stays that way
+    until a disk is already failing. The block storage driver counts every I/O
+    it had to retry or gave up on, and how long the hardware took to answer,
+    which is the earliest warning a Mac gives without installing smartctl.
+    """
+    try:
+        nodes = plistlib.loads(subprocess.run(
+            ["ioreg", "-rc", "IOBlockStorageDriver", "-a", "-d2", "-l"],
+            capture_output=True, timeout=15).stdout)
+    except Exception as e:
+        print(f"Error reading block storage statistics: {e}")
+        return {}
+
+    health = {}
+    for node in nodes:
+        stats = node.get("Statistics") or {}
+        bsd = _first_bsd_name(node)
+        # Drivers with no traffic are disk images and empty card readers.
+        if not bsd or not stats.get("Operations (Read)"):
+            continue
+        reads = stats.get("Operations (Read)", 0)
+        writes = stats.get("Operations (Write)", 0)
+        health[bsd] = {
+            "read_errors": stats.get("Errors (Read)", 0),
+            "write_errors": stats.get("Errors (Write)", 0),
+            "read_retries": stats.get("Retries (Read)", 0),
+            "write_retries": stats.get("Retries (Write)", 0),
+            "read_ops_total": reads,
+            "write_ops_total": writes,
+            "read_bytes_total": stats.get("Bytes (Read)", 0),
+            "write_bytes_total": stats.get("Bytes (Write)", 0),
+            # "Total Time" is nanoseconds spent servicing I/O, so this is the
+            # average time one operation took. It climbs long before a disk
+            # reports itself unhealthy.
+            "avg_read_latency_us": round(stats.get("Total Time (Read)", 0) / reads / 1000, 1),
+            "avg_write_latency_us": (round(stats.get("Total Time (Write)", 0) / writes / 1000, 1)
+                                     if writes else 0.0),
+        }
+    return health
+
+# Cumulative counters only say what has happened since boot, so the rate is
+# taken between two refreshes of the system info.
+previous_block_health = {}
+previous_block_health_time = None
+
+def add_block_io_rates(health):
+    """Turn the cumulative counters into IOPS and MB/s over the last refresh."""
+    global previous_block_health, previous_block_health_time
+    now = time.time()
+    elapsed = now - previous_block_health_time if previous_block_health_time else 0
+    for bsd, cur in health.items():
+        prev = previous_block_health.get(bsd)
+        if prev and elapsed > 0:
+            cur["read_iops"] = round((cur["read_ops_total"] - prev["read_ops_total"]) / elapsed, 1)
+            cur["write_iops"] = round((cur["write_ops_total"] - prev["write_ops_total"]) / elapsed, 1)
+            cur["read_bytes_per_sec"] = int((cur["read_bytes_total"] - prev["read_bytes_total"]) / elapsed)
+            cur["write_bytes_per_sec"] = int((cur["write_bytes_total"] - prev["write_bytes_total"]) / elapsed)
+        else:
+            # First refresh after start: a rate needs two readings, and null
+            # says "not measured yet" where 0 would claim an idle disk.
+            cur["read_iops"] = cur["write_iops"] = None
+            cur["read_bytes_per_sec"] = cur["write_bytes_per_sec"] = None
+    previous_block_health = {k: dict(v) for k, v in health.items()}
+    previous_block_health_time = now
+    return health
+
+
+# --- shared volumes (NFS, SMB, AFP) -----------------------------------------
+
+# psutil.disk_partitions(all=False) keeps only local devices, which is why
+# shared storage was invisible to the dashboard entirely.
+NETWORK_FS_TYPES = {"nfs", "nfsv4", "smbfs", "afpfs", "webdav", "cifs", "ftp"}
+
+def with_timeout(fn, timeout, default=None):
+    """Run fn on a worker thread and give up on it after `timeout` seconds.
+
+    A shared volume whose server has gone away leaves statvfs() blocked inside
+    the kernel with no way to interrupt it, and the collector would stop
+    reporting anything at all — including the local disks that are still fine.
+    The thread is abandoned rather than killed, because Python cannot kill one;
+    it is a daemon, so it never holds the process open.
+    """
+    result = {}
+    def run():
+        try:
+            result["value"] = fn()
+        except Exception as e:
+            result["error"] = e
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    return result.get("value", default)
+
+def get_nfs_mount_parameters():
+    """Per-mount NFS detail: protocol version, and whether pNFS is in use.
+
+    `nfsstat -m` prints a block per mount whose first line is
+    "<mountpoint> from <server>:<export>", followed by indented parameters.
+    """
+    try:
+        out = subprocess.run(["nfsstat", "-m"], capture_output=True,
+                             text=True, timeout=15).stdout
+    except Exception:
+        return {}
+
+    params, mountpoint = {}, None
+    for line in out.splitlines():
+        if line and not line[0].isspace() and " from " in line:
+            mountpoint = line.split(" from ")[0].strip()
+            params[mountpoint] = {"detail": "", "nfs_version": "", "pnfs": False}
+        elif mountpoint and line.strip():
+            detail = params[mountpoint]
+            detail["detail"] = (detail["detail"] + " " + line.strip()).strip()
+            low = line.lower()
+            # Written as "vers=4.1" in the parameter line and "nfsv4" in the
+            # flag summary, depending on the macOS release.
+            match = re.search(r"vers=(\d+(?:\.\d+)?)", low) or re.search(r"nfsv(\d(?:\.\d)?)", low)
+            if match and not detail["nfs_version"]:
+                detail["nfs_version"] = match.group(1)
+            if "pnfs" in low:
+                detail["pnfs"] = True
+    return params
+
+def get_network_mounts():
+    """Shared volumes mounted on this Mac, with capacity where reachable."""
+    parameters = get_nfs_mount_parameters()
+    mounts = []
+    try:
+        partitions = psutil.disk_partitions(all=True)
+    except Exception as e:
+        print(f"Error listing mounts: {e}")
+        return []
+
+    for p in partitions:
+        if p.fstype.lower() not in NETWORK_FS_TYPES:
+            continue
+        server, _, export = p.device.partition(":")
+        usage = with_timeout(lambda mp=p.mountpoint: psutil.disk_usage(mp), 5)
+        mount = {
+            "mountpoint": p.mountpoint,
+            "device": p.device,
+            "fstype": p.fstype,
+            "server": server if export else "",
+            "export": export,
+            "options": p.opts,
+            "read_only": "ro" in p.opts.split(","),
+            # False means the server did not answer in five seconds — a stale
+            # mount, not an empty one, and the difference matters to whoever
+            # is on call.
+            "reachable": usage is not None,
+            "total_bytes": usage.total if usage else 0,
+            "used_bytes": usage.used if usage else 0,
+            "free_bytes": usage.free if usage else 0,
+            "used_percent": round(usage.used / usage.total * 100, 1) if usage and usage.total else 0.0,
+            **parameters.get(p.mountpoint, {}),
+        }
+        mounts.append(mount)
+    return mounts
+
+def get_nfs_client_stats():
+    """NFS client RPC counts by operation — the shared-volume equivalent of
+    the local disk's read/write counters, and the only view of what this Mac
+    is actually asking its servers to do."""
+    try:
+        out = subprocess.run(["nfsstat", "-c"], capture_output=True,
+                             text=True, timeout=15).stdout
+    except Exception:
+        return {}
+
+    stats, section, headers = {}, None, None
+    for line in out.splitlines():
+        stripped = line.strip()
+        if stripped.endswith("RPC Counts:"):
+            section = stripped.replace(" RPC Counts:", "").strip()
+            headers = None
+            continue
+        if not section or not stripped:
+            continue
+        fields = stripped.split()
+        if all(f.isdigit() for f in fields) and headers and len(fields) == len(headers):
+            # A row of numbers belongs to the header row directly above it.
+            for name, value in zip(headers, fields):
+                stats[f"{section}.{name}"] = int(value)
+            headers = None
+        elif not any(f.isdigit() for f in fields):
+            headers = fields
+    return stats
+
+# --- users, quotas and who is filling the disk ------------------------------
+
+def get_user_accounts():
+    """Real people with home directories on this Mac.
+
+    Below uid 500 is macOS's own service accounts (_spotlight, _www and some
+    two hundred others), which own no user data and would bury the real ones.
+    """
+    try:
+        out = subprocess.run(["dscl", ".", "-list", "/Users", "UniqueID"],
+                             capture_output=True, text=True, timeout=15).stdout
+    except Exception as e:
+        print(f"Error listing user accounts: {e}")
+        return []
+
+    users = []
+    for line in out.splitlines():
+        fields = line.split()
+        if len(fields) != 2 or not fields[1].isdigit():
+            continue
+        username, uid = fields[0], int(fields[1])
+        if uid < 500 or username.startswith("_"):
+            continue
+        home = f"/Users/{username}"
+        try:
+            read = subprocess.run(["dscl", ".", "-read", f"/Users/{username}",
+                                   "NFSHomeDirectory"], capture_output=True,
+                                  text=True, timeout=10).stdout
+            if ":" in read:
+                home = read.split(":", 1)[1].strip() or home
+        except Exception:
+            pass
+        users.append({"username": username, "uid": uid, "home": home})
+    return users
+
+def parse_quota_output(text):
+    """Pull usage and limits out of `quota -v` for one user.
+
+    Two shapes: "…: none" when the filesystem has no quotas turned on, or a
+    table of filesystems with block and file limits. macOS ships quotas off,
+    and saying so is a better answer for an administrator than an empty panel.
+    """
+    if "none" in text.lower():
+        return {"enabled": False, "filesystems": []}
+
+    filesystems, headers = [], None
+    for line in text.splitlines():
+        fields = line.split()
+        if not fields or line.rstrip().endswith(":"):
+            continue
+        if fields[0].lower() in ("filesystem", "disk"):
+            headers = fields
+            continue
+        # A quota row is a filesystem followed by numbers; grace columns are
+        # blank when nothing is over its limit, so positions are not reliable
+        # and only the leading numeric run is read.
+        if headers and fields[0].startswith("/"):
+            numbers = []
+            for f in fields[1:]:
+                if f.rstrip("*").isdigit():
+                    numbers.append(int(f.rstrip("*")))
+                else:
+                    break
+            if len(numbers) >= 3:
+                filesystems.append({
+                    "filesystem": fields[0],
+                    # `quota` reports in 1 KiB blocks.
+                    "used_bytes": numbers[0] * 1024,
+                    "soft_limit_bytes": numbers[1] * 1024,
+                    "hard_limit_bytes": numbers[2] * 1024,
+                    "file_count": numbers[3] if len(numbers) > 3 else 0,
+                    "file_soft_limit": numbers[4] if len(numbers) > 4 else 0,
+                    "file_hard_limit": numbers[5] if len(numbers) > 5 else 0,
+                })
+    return {"enabled": bool(filesystems), "filesystems": filesystems}
+
+def get_user_quotas(users):
+    """Quota limits per user, where the filesystem has quotas enabled."""
+    quotas = {}
+    for user in users:
+        try:
+            out = subprocess.run(["quota", "-v", user["username"]],
+                                 capture_output=True, text=True, timeout=15).stdout
+        except Exception:
+            continue
+        quotas[user["username"]] = parse_quota_output(out)
+    return quotas
+
+# Sizing a home directory means walking it: `du -skx` over a 68 GB home took
+# 77 seconds on the machine this was written on. Far too slow for a five-second
+# loop, so it runs on its own thread and the loop only ever reads the last
+# finished result.
+USER_USAGE_INTERVAL = int(os.getenv("USER_USAGE_INTERVAL_SECONDS", "1800"))
+USER_USAGE_TIMEOUT = int(os.getenv("USER_USAGE_TIMEOUT_SECONDS", "900"))
+_user_usage = {"users": [], "measured_at": None, "measuring": False}
+_user_usage_lock = threading.Lock()
+
+def measure_user_usage(users):
+    """Size every home directory, and the largest folders inside each.
+
+    `-d 2` costs nothing extra — the walk happens either way — and turns "this
+    user has 68 GB" into "and here is where it is", which is the question an
+    administrator asks next.
+    """
+    measured = []
+    for user in users:
+        try:
+            # `nice` so a background audit never competes with the user's work.
+            out = subprocess.run(
+                ["nice", "-n", "10", "du", "-kxd", "2", user["home"]],
+                capture_output=True, text=True, timeout=USER_USAGE_TIMEOUT).stdout
+        except subprocess.TimeoutExpired:
+            print(f"✗ Sizing {user['home']} took longer than {USER_USAGE_TIMEOUT}s — skipped")
+            continue
+        except Exception as e:
+            print(f"✗ Error sizing {user['home']}: {e}")
+            continue
+
+        total, children = 0, []
+        for line in out.splitlines():
+            size, _, path = line.partition("\t")
+            if not path or not size.strip().isdigit():
+                continue
+            size_bytes = int(size) * 1024
+            if path == user["home"]:
+                total = size_bytes
+            else:
+                children.append({"path": path, "used_bytes": size_bytes})
+        children.sort(key=lambda c: c["used_bytes"], reverse=True)
+        measured.append({**user, "used_bytes": total,
+                         "largest_folders": children[:10]})
+    return measured
+
+def user_usage_worker():
+    """Re-measure every USER_USAGE_INTERVAL seconds, forever."""
+    while True:
+        users = get_user_accounts()
+        if users:
+            with _user_usage_lock:
+                _user_usage["measuring"] = True
+            measured = measure_user_usage(users)
+            with _user_usage_lock:
+                _user_usage.update(users=measured, measuring=False,
+                                   measured_at=datetime.now(timezone.utc)
+                                   .isoformat().replace("+00:00", "Z"))
+            print(f"✓ Sized {len(measured)} home director"
+                  f"{'y' if len(measured) == 1 else 'ies'}")
+        time.sleep(USER_USAGE_INTERVAL)
+
+def start_user_usage_worker():
+    thread = threading.Thread(target=user_usage_worker, daemon=True)
+    thread.start()
+    return thread
+
+def get_user_report():
+    """Everything known about who is using the disk, for one report."""
+    accounts = get_user_accounts()
+    quotas = get_user_quotas(accounts)
+    with _user_usage_lock:
+        sized = {u["username"]: u for u in _user_usage["users"]}
+        measured_at = _user_usage["measured_at"]
+        measuring = _user_usage["measuring"]
+
+    users = []
+    for account in accounts:
+        measurement = sized.get(account["username"], {})
+        users.append({
+            **account,
+            # 0 until the first background pass finishes, which `measured_at`
+            # being null distinguishes from a genuinely empty home directory.
+            "used_bytes": measurement.get("used_bytes", 0),
+            "largest_folders": measurement.get("largest_folders", []),
+            "quota": quotas.get(account["username"], {"enabled": False, "filesystems": []}),
+        })
+    return {"users": users, "measured_at": measured_at, "measuring": measuring,
+            "interval_seconds": USER_USAGE_INTERVAL}
+
+def get_local_snapshots():
+    """Time Machine's local snapshots, which silently hold space that `df`
+    reports as free until macOS decides to thin them."""
+    snapshots = []
+    try:
+        out = subprocess.run(["tmutil", "listlocalsnapshots", "/"],
+                             capture_output=True, text=True, timeout=30).stdout
+    except Exception:
+        return snapshots
+    for line in out.splitlines():
+        name = line.strip()
+        if not name.startswith("com.apple"):
+            continue
+        # Trailing component is the creation time: com.apple.TimeMachine.2026-09-12-154321
+        stamp = name.rsplit(".", 1)[-1]
+        snapshots.append({"name": name, "created": stamp if stamp[:2].isdigit() else ""})
+    return snapshots
+
+def get_inode_usage():
+    """Inodes used and free per mounted filesystem.
+
+    APFS allocates inodes dynamically so this rarely constrains a Mac, but a
+    shared volume exported from anything else can run out of them while still
+    reporting free space — a failure that looks like nothing else.
+    """
+    usage = []
+    try:
+        out = subprocess.run(["df", "-i"], capture_output=True, text=True, timeout=15).stdout
+    except Exception:
+        return usage
+    PSEUDO = ("devfs", "map", "autofs")
+    for line in out.splitlines()[1:]:
+        fields = line.split()
+        # filesystem blocks used avail capacity iused ifree %iused mounted-on
+        if len(fields) < 9 or not fields[5].isdigit() or not fields[6].isdigit():
+            continue
+        # devfs reports zero free inodes permanently, which reads as a
+        # filesystem at 100% forever; neither it nor an automounter map is a
+        # thing an administrator can run out of.
+        if fields[0].startswith(PSEUDO):
+            continue
+        used, free = int(fields[5]), int(fields[6])
+        usage.append({
+            "filesystem": fields[0],
+            "mountpoint": " ".join(fields[8:]),
+            "inodes_used": used,
+            "inodes_free": free,
+            "inodes_used_percent": round(used / (used + free) * 100, 2) if used + free else 0.0,
+        })
+    return usage
+
 def send_system_info():
     """Gather and POST slow-changing disk/APFS info (not every 5-sec cycle)."""
     system_info = {
@@ -352,6 +798,11 @@ def send_system_info():
         "io_totals": get_io_totals(),
         "filevault_enabled": get_filevault_status(),
         "snapshot_count": get_snapshot_count(),
+        "snapshots": get_local_snapshots(),
+        "block_health": add_block_io_rates(get_block_health()),
+        "network_mounts": get_network_mounts(),
+        "nfs_client_stats": get_nfs_client_stats(),
+        "inode_usage": get_inode_usage(),
     }
     try:
         requests.post(f"{BACKEND_URL}/api/system-info", json=system_info,
@@ -360,6 +811,25 @@ def send_system_info():
     except Exception as e:
         print(f"✗ Error sending system info: {e}")
     return system_info
+
+def send_user_report():
+    """POST who is using the disk, and under what quota.
+
+    Separate from system info because it is answered by a background thread on
+    its own schedule — home directories take minutes to size — and because the
+    backend keeps a history of it to spot a user's usage running away.
+    """
+    report = get_user_report()
+    report["hostname"] = platform.node()
+    report["timestamp"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    try:
+        requests.post(f"{BACKEND_URL}/api/user-usage", json=report,
+                      headers=AUTH_HEADERS, timeout=10).raise_for_status()
+        print(f"✓ User report sent: {len(report['users'])} user(s)"
+              f"{', sizing in progress' if report['measuring'] else ''}")
+    except Exception as e:
+        print(f"✗ Error sending user report: {e}")
+    return report
 
 def report_alert(alert_type, severity, message):
     """Report an ad-hoc alert (not tied to a specific metrics sample) for AI explanation + storage."""
@@ -382,6 +852,50 @@ def check_disk_health(physical_disks):
                 "DISK_HEALTH_PROBLEM", "critical",
                 f"Disk {d['device_identifier']} ({d['model']}) SMART status: {status}"
             )
+
+# Counters are cumulative since boot, so an alert fires on a rise rather than
+# on any non-zero value — a disk that logged one retry a year ago is not news
+# every sixty seconds for the rest of its life.
+previous_error_counts = {}
+
+def check_block_health(block_health):
+    """Alert on I/O the hardware got wrong, which SMART will not report until
+    much later — often not until the disk has already lost data."""
+    global previous_error_counts
+    for bsd, h in block_health.items():
+        errors = h["read_errors"] + h["write_errors"]
+        retries = h["read_retries"] + h["write_retries"]
+        was = previous_error_counts.get(bsd, {"errors": errors, "retries": retries})
+        if errors > was["errors"]:
+            report_alert("DISK_IO_ERRORS", "critical",
+                         f"{bsd} reported {errors - was['errors']} new I/O error(s) "
+                         f"({errors} since boot) — the disk failed to complete a read or write")
+        elif retries > was["retries"]:
+            report_alert("DISK_IO_RETRIES", "warning",
+                         f"{bsd} retried {retries - was['retries']} I/O operation(s) "
+                         f"({retries} since boot) — an early sign of a failing disk or cable")
+        previous_error_counts[bsd] = {"errors": errors, "retries": retries}
+
+previously_reachable_mounts = {}
+
+def check_network_mounts(mounts):
+    """Alert when a shared volume stops answering.
+
+    A hung NFS mount is invisible to a capacity check — it reports nothing at
+    all rather than reporting a problem — so it is worth its own alert.
+    """
+    global previously_reachable_mounts
+    for m in mounts:
+        was = previously_reachable_mounts.get(m["mountpoint"])
+        if was and not m["reachable"]:
+            report_alert("SHARE_UNREACHABLE", "critical",
+                         f"{m['fstype'].upper()} share {m['device']} mounted at "
+                         f"{m['mountpoint']} stopped responding")
+        elif was is False and m["reachable"]:
+            report_alert("SHARE_RECOVERED", "info",
+                         f"{m['fstype'].upper()} share {m['device']} at "
+                         f"{m['mountpoint']} is responding again")
+        previously_reachable_mounts[m["mountpoint"]] = m["reachable"]
 
 previously_seen_volumes = None
 
@@ -531,6 +1045,9 @@ def main():
     # A rate needs two readings. Take the first now so the very first report —
     # the one a newly connected dashboard shows — carries real throughput, not 0.
     previous_counters, previous_time = psutil.disk_io_counters(), time.time()
+    # Home directories take minutes to walk, so sizing starts now and runs on
+    # its own thread; the first report simply carries no sizes yet.
+    start_user_usage_worker()
     time.sleep(1)
 
     cycle = 0
@@ -565,6 +1082,9 @@ def main():
             if cycle % 12 == 0:
                 system_info = send_system_info()
                 check_disk_health(system_info["physical_disks"])
+                check_block_health(system_info["block_health"])
+                check_network_mounts(system_info["network_mounts"])
+                send_user_report()
 
             write_status(samples, alerts, system_info)
             cycle += 1

@@ -4,6 +4,9 @@ import Alerts from './Alerts.jsx'
 import Volumes from './Volumes.jsx'
 import Disks from './Disks.jsx'
 import Apfs from './Apfs.jsx'
+import BlockHealth from './BlockHealth.jsx'
+import NetworkVolumes from './NetworkVolumes.jsx'
+import Users from './Users.jsx'
 import MenuBarSetting from '../MenuBarSetting.jsx'
 
 const gb = (bytes) => `${(bytes / 1e9).toFixed(1)} GB`
@@ -48,7 +51,10 @@ function Dashboard() {
       <Alerts />
       <Volumes />
       <Disks />
+      <BlockHealth />
       <Apfs />
+      <NetworkVolumes />
+      <Users />
       <MenuBarSetting />
     </>
   )
