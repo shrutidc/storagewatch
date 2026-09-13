@@ -202,6 +202,15 @@ driver's health counts; I/O performance and Alerts are one section each. Users s
 accounts, admin rights, sign-ins and quotas — none of which needs file access — and sizes
 only where a Mac opted in.
 
+### A write spike must also be at least 50 MB/s
+
+The rule was a ratio alone — writes above 4× their recent average — and on an idle Mac
+that average is near zero, so ordinary background writes of 2–4 MB/s raised "4.2×
+baseline (2 MB/s vs 0 MB/s)" alerts all evening. A spike now also has to reach 50 MB/s:
+far above background activity, far below the bulk writes an administrator cares about
+(the demo's `mkfile 2g` runs at hundreds of MB/s). The dashboard also leads with an
+overview — one line per alert type — and keeps the full list in a drop-down.
+
 ### Missing secrets abort startup
 
 Absent `AUTH0_DOMAIN` or `AUTH0_AUDIENCE`, the process exits. Failing

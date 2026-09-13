@@ -218,7 +218,7 @@ counters. The same reading is therefore attached to every volume in a sample.
 |---|---|
 | `used_percent >= 90` | critical |
 | `used_percent >= 80` | warning |
-| Write throughput > 4× the average of the previous 20 samples | warning |
+| Write throughput > 4× the average of the previous 20 samples, and ≥ 50 MB/s | warning |
 | A disk reported new I/O **errors** since the last check | critical |
 | A disk reported new I/O **retries** since the last check | warning |
 | A shared volume stopped answering | critical |

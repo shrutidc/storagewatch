@@ -98,7 +98,7 @@ POST /api/metrics
   ├─ detect_anomalies()
   │    ├─ check_capacity_alert()    → >=90 critical, >=80 warning
   │    └─ check_io_anomaly()        → per-machine deque(maxlen=20); needs >=5 prior
-  │                                    samples; fires if > 4× their mean
+  │                                    samples; fires if > 4× their mean and ≥ 50 MB/s
   └─ for each anomaly
        ├─ has_recent_alert()        → skip if same type+severity in last 10 min
        └─ insert_alert()            → no LLM call; the AI answers only when asked (section 5)

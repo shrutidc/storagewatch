@@ -101,7 +101,7 @@ Three tables, created automatically from `backend/schema.sql`:
 |---|---|
 | `used_percent >= 90` | critical |
 | `used_percent >= 80` | warning |
-| Write throughput > 4× mean of the previous 20 samples | warning |
+| Write throughput > 4× mean of the previous 20 samples, and ≥ 50 MB/s | warning |
 
 The write baseline is an in-process `deque(maxlen=20)` per machine and needs 5 prior
 samples before it fires — a freshly started backend stays quiet for ~30 seconds. Being

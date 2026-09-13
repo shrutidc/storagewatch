@@ -20,6 +20,12 @@ def check_capacity_alert(used_percent):
         }
     return None
 
+# A ratio alone fires on noise: on an idle Mac the baseline is near zero, so a
+# 2 MB/s cache write reads as a "4x spike". A spike must also be this fast —
+# well above background activity, well below a real bulk write (a dataset
+# import or model checkpoint runs at hundreds of MB/s).
+MIN_SPIKE_BYTES_PER_SEC = 50_000_000
+
 def check_io_anomaly(write_bytes_per_sec, key=None):
     history = write_history[key]
 
@@ -34,7 +40,7 @@ def check_io_anomaly(write_bytes_per_sec, key=None):
 
     ratio = write_bytes_per_sec / baseline
 
-    if ratio > 4:
+    if ratio > 4 and write_bytes_per_sec >= MIN_SPIKE_BYTES_PER_SEC:
         return {
             "type": "HIGH_WRITE_ACTIVITY",
             "severity": "warning",

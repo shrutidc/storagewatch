@@ -52,6 +52,12 @@ def test_write_anomaly():
     assert check_io_anomaly(500_000_000, key="other-mac") is None, "Baselines must be per machine"
     print("✓ Per-machine baseline")
 
+    # On an idle Mac a tiny write is a big ratio; below 50 MB/s it isn't an alert
+    for _ in range(5):
+        check_io_anomaly(400_000, key="idle-mac")
+    assert check_io_anomaly(2_000_000, key="idle-mac") is None, "2 MB/s must not alert"
+    print("✓ 2 MB/s at 5x baseline: no alert (below 50 MB/s)")
+
 def test_metrics_model():
     """Test Metrics model validation."""
     print("\n[TEST] Metrics Model Validation")
