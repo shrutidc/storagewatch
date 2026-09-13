@@ -46,6 +46,7 @@ Two consequences worth internalising:
 | Component | Runs | Responsibility |
 |---|---|---|
 | `collector/` | On the monitored Mac | Samples volumes, disks, APFS state; POSTs to the backend; installs itself as a LaunchAgent via `/install.sh` |
+| `menubar/` | On the monitored Mac | Native SwiftUI menu bar app; renders `~/.storagewatch/status.json`, written by the collector |
 | `backend/` | Anywhere reachable | Ingests, stores, detects anomalies, serves the API and AI, serves the built dashboard in production |
 | `frontend/` | Browser | Single-page React dashboard, Settings, Auth0 login, Recharts, AI chat |
 

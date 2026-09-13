@@ -72,9 +72,12 @@ main() loop, cycle N
   │         └─ other? → psutil.disk_usage(mountpoint)
   │       used_percent = used / total * 100
   ├─ for each: send_metrics()       → POST /api/metrics  + agent token
+  │                                    reply for "/" carries the host's open alerts
+  │                                    → macOS notification for each new one
   ├─ if N % 12 == 0  (~60s)
   │    ├─ send_system_info()        → POST /api/system-info: disks, APFS, FileVault
   │    └─ check_disk_health()       → SMART status via diskutil
+  ├─ write_status()                 → ~/.storagewatch/status.json (menu bar app)
   └─ sleep 5
 ```
 

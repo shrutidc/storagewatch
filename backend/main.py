@@ -66,7 +66,16 @@ def post_metrics(metrics: Metrics, owner_sub: str = Depends(require_agent)):
                 metric_value=metrics.used_percent if anomaly["type"] == "HIGH_CAPACITY" else metrics.write_bytes_per_sec,
             )
 
-        return {"status": "ok", "alerts": len(anomalies)}
+        reply = {"status": "ok", "alerts": len(anomalies)}
+        if metrics.filesystem == "/":
+            # The collector hands these to the menu bar app and to macOS
+            # notifications, so the Mac shows alerts without anyone signing in.
+            reply["active_alerts"] = [
+                {"id": a["id"], "alert_type": a["alert_type"], "severity": a["severity"],
+                 "message": a["message"], "created_at": a["created_at"].isoformat()}
+                for a in get_recent_alerts(owner_sub, limit=5, hostname=metrics.hostname)
+            ]
+        return reply
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -432,6 +441,12 @@ def install_script():
 @app.get("/collector.py")
 def collector_script():
     return FileResponse(COLLECTOR_DIR / "collector.py", media_type="text/plain")
+
+@app.get("/StorageWatch.zip")
+def menu_bar_app():
+    """The menu bar app the installer puts in ~/Applications (built by menubar/build.sh)."""
+    return FileResponse(COLLECTOR_DIR.parent / "menubar" / "StorageWatch.zip",
+                        media_type="application/zip")
 
 # Serve the built dashboard from this same app, so the browser talks to one
 # origin and /api calls need no CORS or proxy. Vite's dev proxy only exists

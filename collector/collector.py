@@ -294,7 +294,7 @@ def send_system_info():
         print(f"✓ System info sent: {len(system_info['physical_disks'])} disk(s), FileVault {'on' if system_info['filevault_enabled'] else 'off'}")
     except Exception as e:
         print(f"✗ Error sending system info: {e}")
-    return system_info["physical_disks"]
+    return system_info
 
 def report_alert(alert_type, severity, message):
     """Report an ad-hoc alert (not tied to a specific metrics sample) for AI explanation + storage."""
@@ -329,7 +329,7 @@ def check_volume_changes(current_volumes):
     previously_seen_volumes = current_set
 
 def send_metrics(metrics):
-    """POST metrics to backend."""
+    """POST metrics to backend. Returns the backend's reply, or None on failure."""
     try:
         response = requests.post(
             f"{BACKEND_URL}/api/metrics",
@@ -339,15 +339,59 @@ def send_metrics(metrics):
         )
     except Exception as e:
         print(f"✗ Error sending metrics: {e}")
-        return False
+        return None
     if response.status_code == 401:
         raise TokenRejected()
     if not response.ok:
         # A rejected payload would otherwise fail silently every cycle.
         print(f"✗ Backend rejected metrics: HTTP {response.status_code} {response.text[:200]}")
-        return False
+        return None
     print(f"✓ Metrics sent: {metrics['used_percent']:.1f}% used, R:{metrics['read_bytes_per_sec']/1e6:.0f}MB/s W:{metrics['write_bytes_per_sec']/1e6:.0f}MB/s")
-    return True
+    return response.json()
+
+# The menu bar app reads this instead of calling the API, so it needs no login:
+# the collector already holds the credentials.
+STATUS_FILE = TOKEN_FILE.parent / "status.json"
+
+def write_status(samples, alerts, system_info):
+    """Latest reading for the menu bar app, replaced atomically each cycle."""
+    boot = next((m for m in samples if m["filesystem"] == "/"), samples[0] if samples else {})
+    status = {
+        "hostname": platform.node(),
+        "dashboard_url": DASHBOARD_URL,
+        "read_bytes_per_sec": boot.get("read_bytes_per_sec", 0),
+        "write_bytes_per_sec": boot.get("write_bytes_per_sec", 0),
+        "volumes": [{k: m[k] for k in ("filesystem", "filesystem_type", "total_bytes",
+                                        "used_bytes", "free_bytes", "used_percent")}
+                    for m in samples],
+        "alerts": alerts,
+        "disks": [{"model": d["model"], "smart_status": d["smart_status"]}
+                  for d in system_info.get("physical_disks", [])],
+        "filevault_enabled": system_info.get("filevault_enabled"),
+        "snapshot_count": system_info.get("snapshot_count"),
+    }
+    STATUS_FILE.parent.mkdir(mode=0o700, exist_ok=True)
+    tmp = STATUS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(status))
+    tmp.replace(STATUS_FILE)
+
+notified_alerts = None  # ids already announced; None until the first reply
+
+def notify_new_alerts(alerts):
+    """Raise a macOS notification for each alert that wasn't open last cycle.
+    Alerts already open when the collector starts are not re-announced."""
+    global notified_alerts
+    if notified_alerts is not None:
+        for a in alerts:
+            if a["id"] not in notified_alerts:
+                subprocess.run([
+                    "osascript",
+                    "-e", "on run argv",
+                    "-e", "display notification (item 1 of argv) with title \"StorageWatch\" subtitle (item 2 of argv)",
+                    "-e", "end run",
+                    a["message"], a["alert_type"].replace("_", " ").title(),
+                ], capture_output=True)
+    notified_alerts = (notified_alerts or set()) | {a["id"] for a in alerts}
 
 def load_or_enroll_token():
     """This Mac's agent token: from .env if set, else saved by an earlier
@@ -425,19 +469,26 @@ def main():
     time.sleep(1)
 
     cycle = 0
+    system_info = {}
+    alerts = []
     while True:
         try:
             volumes = get_monitored_volumes()
             check_volume_changes(volumes)
 
-            for metrics in collect_metrics():
-                send_metrics(metrics)
+            samples = collect_metrics()
+            for metrics in samples:
+                reply = send_metrics(metrics)
+                if reply and "active_alerts" in reply:
+                    alerts = reply["active_alerts"]
+                    notify_new_alerts(alerts)
 
             # Disk/APFS info changes rarely — refresh every ~60s, not every cycle
             if cycle % 12 == 0:
-                physical_disks = send_system_info()
-                check_disk_health(physical_disks)
+                system_info = send_system_info()
+                check_disk_health(system_info["physical_disks"])
 
+            write_status(samples, alerts, system_info)
             cycle += 1
             time.sleep(5)
         except KeyboardInterrupt:
@@ -483,11 +534,49 @@ def install():
     print("✓ StorageWatch now runs in the background whenever you're logged in to this Mac.")
     print(f"  Log:    {log}")
     print(f"  Remove: {sys.executable} {script} --uninstall")
+    install_menu_bar()
+
+MENU_BAR_APP = Path.home() / "Applications" / "StorageWatch.app"
+MENU_BAR_AGENT = Path.home() / "Library" / "LaunchAgents" / "tech.storagewatch.menubar.plist"
+
+def install_menu_bar():
+    """Put the StorageWatch menu bar app in ~/Applications and open it at login.
+
+    Downloaded by this script rather than a browser, so macOS doesn't
+    quarantine it and Gatekeeper doesn't block the ad-hoc-signed app.
+    """
+    try:
+        r = requests.get(f"{BACKEND_URL}/StorageWatch.zip", timeout=60)
+        r.raise_for_status()
+        # A backend without the app answers unknown paths with the dashboard
+        # page (200, HTML), which would otherwise be unzipped and fail.
+        if r.content[:2] != b"PK":
+            raise ValueError("this server doesn't provide the menu bar app yet")
+    except Exception as e:
+        print(f"✗ Menu bar app not installed: {e}")
+        return
+    archive = INSTALL_DIR / "StorageWatch.zip"
+    archive.write_bytes(r.content)
+    subprocess.run(["pkill", "-x", "StorageWatch"], capture_output=True)  # replace a running copy
+    shutil.rmtree(MENU_BAR_APP, ignore_errors=True)
+    MENU_BAR_APP.parent.mkdir(exist_ok=True)
+    subprocess.run(["ditto", "-x", "-k", str(archive), str(MENU_BAR_APP.parent)], check=True)
+    MENU_BAR_AGENT.write_bytes(plistlib.dumps({
+        "Label": "tech.storagewatch.menubar",
+        "ProgramArguments": ["/usr/bin/open", "-a", str(MENU_BAR_APP)],
+        "RunAtLoad": True,
+    }))
+    subprocess.run(["launchctl", "unload", str(MENU_BAR_AGENT)], capture_output=True)
+    subprocess.run(["launchctl", "load", "-w", str(MENU_BAR_AGENT)], check=True)
+    print("✓ StorageWatch is in your menu bar (top right) and opens at login.")
 
 def uninstall():
-    subprocess.run(["launchctl", "unload", str(LAUNCH_AGENT)], capture_output=True)
-    LAUNCH_AGENT.unlink(missing_ok=True)
-    print("✓ Background collector removed.")
+    for agent in (LAUNCH_AGENT, MENU_BAR_AGENT):
+        subprocess.run(["launchctl", "unload", str(agent)], capture_output=True)
+        agent.unlink(missing_ok=True)
+    subprocess.run(["pkill", "-x", "StorageWatch"], capture_output=True)
+    shutil.rmtree(MENU_BAR_APP, ignore_errors=True)
+    print("✓ Background collector and menu bar app removed.")
 
 if __name__ == "__main__":
     if "--install" in sys.argv:

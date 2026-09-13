@@ -86,6 +86,16 @@ Mac through the browser, and registers a LaunchAgent that starts it at every log
 restarts it if it exits. The copy lives outside `~/Documents` because macOS privacy
 controls stop background processes reading that folder.
 
+### The menu bar app reads a local file, not the API
+
+Administrators wanted storage at a glance without signing in again. The menu bar app
+talks to no server: the collector, which already authenticates, writes its latest sample,
+the host's open alerts (returned by `POST /api/metrics`) and disk health to
+`~/.storagewatch/status.json` each cycle, and the app renders that file. It is native
+Swift (SwiftUI `MenuBarExtra`), built universal and ad-hoc signed; the installer
+downloads it with the collector rather than a browser, so it isn't quarantined and
+Gatekeeper doesn't block it. New alerts also raise macOS notifications from the collector.
+
 ### Missing secrets abort startup
 
 Absent `AUTH0_DOMAIN` or `AUTH0_AUDIENCE`, the process exits. Failing

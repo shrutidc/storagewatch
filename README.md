@@ -152,7 +152,8 @@ Mac Agent (collector) → FastAPI Backend → Tiger Data
 
 ## API
 
-Every API endpoint except `/health`, `/install.sh` and `/collector.py` is authenticated. `agent` means an agent token
+Every API endpoint except `/health`, `/install.sh`, `/collector.py` and `/StorageWatch.zip`
+is authenticated. `agent` means an agent token
 obtained by the collector's browser sign-in; `user` means an Auth0 access token. (In a production build the backend
 also serves the dashboard's static files on unmatched paths — see above.)
 
@@ -174,6 +175,7 @@ also serves the dashboard's static files on unmatched paths — see above.)
 | POST | `/api/ai/chat` | user | Conversational analysis, grounded in live telemetry |
 | GET | `/install.sh` | — | One-line collector installer for macOS |
 | GET | `/collector.py` | — | The collector script the installer downloads |
+| GET | `/StorageWatch.zip` | — | The menu bar app the installer downloads |
 
 ## Data model
 
@@ -208,6 +210,16 @@ read / write cards, then I/O performance with the graph, every alert, volumes, p
 disks and APFS containers. Questions about any of it go to the **Ask AI** chat.
 **Settings** lists connected Macs and the install command. Polling pauses while the tab
 is in the background.
+
+## Menu bar app
+
+The installer also puts **StorageWatch** in the macOS menu bar and opens it at login.
+The bar shows boot-volume usage (⚠ when an alert is open or the collector stops); a
+click shows every volume, read/write throughput, disk SMART status, FileVault, local
+snapshots and open alerts, plus **Open Dashboard**. New alerts also arrive as macOS
+notifications. It reads `~/.storagewatch/status.json`, which the collector rewrites every
+cycle, so it never asks for a login. Source in `menubar/`; rebuild the served
+`menubar/StorageWatch.zip` with `menubar/build.sh` after changing it.
 
 ## Demo
 
