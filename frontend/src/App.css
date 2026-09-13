@@ -3,22 +3,22 @@
    same names. Anything added later should use a token rather than a literal,
    otherwise it will look correct in one theme and wrong in the other. */
 :root {
-  --bg: #f5f5f5;
-  --bg-subtle: #f5f5f7;
+  --bg: #eef0f8;
+  --bg-subtle: #e9ecf7;
   --surface: #ffffff;
-  --surface-alt: #f9f9f9;
-  --surface-muted: #f0f0f0;
-  --border-faint: #eee;
-  --border: #e0e0e0;
-  --border-strong: #ddd;
-  --border-input: #ccc;
-  --text: #333;
-  --text-2: #444;
-  --text-3: #555;
-  --text-muted: #666;
-  --text-muted-2: #777;
-  --text-dim: #888;
-  --text-dimmer: #999;
+  --surface-alt: #f6f7fd;
+  --surface-muted: #ebeef9;
+  --border-faint: #e8ebf7;
+  --border: #dde1f0;
+  --border-strong: #ccd2e8;
+  --border-input: #b7bfdc;
+  --text: #1e2233;
+  --text-2: #2a2f45;
+  --text-3: #414863;
+  --text-muted: #5b6280;
+  --text-muted-2: #6c7390;
+  --text-dim: #7d84a1;
+  --text-dimmer: #8d94b0;
   --on-accent: #ffffff;
   --accent: #667eea;
   --accent-2: #764ba2;
@@ -39,6 +39,11 @@
   --neutral-bg: #eceff1;
   /* The command box is a terminal in both themes — it is showing terminal
      output, and inverting it would stop it reading as one. */
+  /* The sidebar belongs to the page's own palette; the command box is a
+     terminal in both themes and keeps its own. */
+  --sidebar-bg: #12172c;
+  --sidebar-text: #ffffff;
+  --sidebar-dim: #a8b0d4;
   --terminal-bg: #1e1e2e;
   --terminal-fg: #9ece6a;
   --text-terminal-dim: #b0b0c0;
@@ -83,16 +88,19 @@
      Surfaces now step up clearly as they come forward, every panel gets a
      1px ring because shadows do not read on dark, and body text is bright
      enough to scan a table without effort while stopping short of pure white. */
-  --bg: #0d1117;
-  --bg-subtle: #1c2128;
-  --surface: #161b22;
-  --surface-alt: #1c2128;
-  --surface-muted: #21262d;
-  --border-faint: #21262d;
-  --border: #30363d;
-  --border-strong: #3d444d;
-  --border-input: #4a515b;
-  --surface-border: #30363d;
+  --bg: #080a12;
+  --bg-subtle: #12162a;
+  --surface: #101426;
+  --surface-alt: #161b31;
+  --surface-muted: #1d2340;
+  --border-faint: #1a2038;
+  --border: #262d4a;
+  --border-strong: #343c60;
+  --border-input: #414a72;
+  --surface-border: #262d4a;
+  --sidebar-bg: #0c0f1d;
+  --sidebar-text: #eef0fb;
+  --sidebar-dim: #9aa2c4;
   --circuit-line: #7c8cf8;
   --circuit-line-rgb: 124,140,248;
   --circuit-pulse: #a5b4fc;
@@ -111,13 +119,13 @@
   --iso-side: rgba(124,140,248,0.08);
   --iso-side-dark: rgba(124,140,248,0.04);
   --iso-platform: rgba(124,140,248,0.06);
-  --text: #e6edf3;
-  --text-2: #dbe3ea;
-  --text-3: #cbd5df;
-  --text-muted: #b0bac5;
-  --text-muted-2: #a3adb9;
-  --text-dim: #97a1ad;
-  --text-dimmer: #8b949e;
+  --text: #e8eaf8;
+  --text-2: #dcdff2;
+  --text-3: #c8cde6;
+  --text-muted: #aab1d0;
+  --text-muted-2: #9aa2c4;
+  --text-dim: #8b93b8;
+  --text-dimmer: #7d85ac;
   --on-accent: #ffffff;
   --accent: #7c8cf8;
   --accent-2: #a78bfa;
@@ -165,7 +173,7 @@ body {
 .sidebar {
   width: 200px;
   flex-shrink: 0;
-  background: var(--terminal-bg);
+  background: var(--sidebar-bg);
   padding: 20px 0;
   display: flex;
   flex-direction: column;
@@ -184,7 +192,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--on-accent);
+  color: var(--sidebar-text);
   font-size: 18px;
   font-weight: 600;
   padding: 0 20px 20px;
@@ -197,7 +205,7 @@ body {
 }
 
 .sidebar-link {
-  color: var(--text-terminal-dim);
+  color: var(--sidebar-dim);
   text-decoration: none;
   padding: 12px 20px;
   font-size: 14px;
@@ -835,7 +843,7 @@ main {
 }
 
 .sidebar-user {
-  color: var(--on-accent);
+  color: var(--sidebar-text);
   font-size: 14px;
   font-weight: 600;
   /* A long display name must not widen the sidebar or wrap onto three lines. */
