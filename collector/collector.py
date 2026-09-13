@@ -677,9 +677,10 @@ def measure_user_usage(users):
     for user in users:
         try:
             # `nice` so a background audit never competes with the user's work.
-            out = subprocess.run(
+            done = subprocess.run(
                 ["nice", "-n", "10", "du", "-kxd", "2", user["home"]],
-                capture_output=True, text=True, timeout=USER_USAGE_TIMEOUT).stdout
+                capture_output=True, text=True, timeout=USER_USAGE_TIMEOUT)
+            out = done.stdout
         except subprocess.TimeoutExpired:
             print(f"✗ Sizing {user['home']} took longer than {USER_USAGE_TIMEOUT}s — skipped")
             continue
@@ -698,8 +699,16 @@ def measure_user_usage(users):
             else:
                 children.append({"path": path, "used_bytes": size_bytes})
         children.sort(key=lambda c: c["used_bytes"], reverse=True)
+        # du skips what it may not read and still prints a total, so a partial
+        # size would otherwise pass for the whole: other users' homes are
+        # closed to a standard account, and macOS privacy controls hide
+        # Documents, Desktop, Mail and more from a background process until it
+        # is given Full Disk Access.
+        unreadable = sum(1 for line in done.stderr.splitlines()
+                         if "Permission denied" in line or "Operation not permitted" in line)
         measured.append({**user, "used_bytes": total,
-                         "largest_folders": children[:10]})
+                         "largest_folders": children[:10],
+                         "complete": unreadable == 0, "unreadable_paths": unreadable})
     return measured
 
 def user_usage_worker():
@@ -741,6 +750,8 @@ def get_user_report():
             # being null distinguishes from a genuinely empty home directory.
             "used_bytes": measurement.get("used_bytes", 0),
             "largest_folders": measurement.get("largest_folders", []),
+            "complete": measurement.get("complete", True),
+            "unreadable_paths": measurement.get("unreadable_paths", 0),
             "quota": quotas.get(account["username"], {"enabled": False, "filesystems": []}),
         })
     return {"users": users, "measured_at": measured_at, "measuring": measuring,
@@ -1147,6 +1158,10 @@ def install():
     # here as well would put the app back on a Mac where the administrator had
     # switched it off, only to remove it again moments later.
     print("  The menu bar app follows the Menu bar app switch on your dashboard.")
+    # An app installed by an older collector was started with `open` and never
+    # restarted if it died; re-register it the current way.
+    if menu_bar_installed():
+        start_menu_bar_agent()
 
 MENU_BAR_APP = Path.home() / "Applications" / "StorageWatch.app"
 MENU_BAR_AGENT = Path.home() / "Library" / "LaunchAgents" / "tech.storagewatch.menubar.plist"
@@ -1210,18 +1225,28 @@ def install_menu_bar():
         return
     archive = INSTALL_DIR / "StorageWatch.zip"
     archive.write_bytes(r.content)
+    subprocess.run(["launchctl", "unload", str(MENU_BAR_AGENT)], capture_output=True)
     subprocess.run(["pkill", "-x", "StorageWatch"], capture_output=True)  # replace a running copy
     shutil.rmtree(MENU_BAR_APP, ignore_errors=True)
     MENU_BAR_APP.parent.mkdir(exist_ok=True)
     subprocess.run(["ditto", "-x", "-k", str(archive), str(MENU_BAR_APP.parent)], check=True)
+    start_menu_bar_agent()
+    print("✓ StorageWatch is in your menu bar (top right) and opens at login.")
+
+def start_menu_bar_agent():
+    """Run the menu bar app at login, and again if it crashes — but not after
+    someone chooses Quit, which exits cleanly. Launched directly rather than
+    through `open`, which launchd would see finish at once and never restart."""
+    subprocess.run(["launchctl", "unload", str(MENU_BAR_AGENT)], capture_output=True)
+    subprocess.run(["pkill", "-x", "StorageWatch"], capture_output=True)  # no second copy
+    MENU_BAR_AGENT.parent.mkdir(parents=True, exist_ok=True)
     MENU_BAR_AGENT.write_bytes(plistlib.dumps({
         "Label": "tech.storagewatch.menubar",
-        "ProgramArguments": ["/usr/bin/open", "-a", str(MENU_BAR_APP)],
+        "ProgramArguments": [str(MENU_BAR_APP / "Contents" / "MacOS" / "StorageWatch")],
         "RunAtLoad": True,
+        "KeepAlive": {"SuccessfulExit": False},
     }))
-    subprocess.run(["launchctl", "unload", str(MENU_BAR_AGENT)], capture_output=True)
     subprocess.run(["launchctl", "load", "-w", str(MENU_BAR_AGENT)], check=True)
-    print("✓ StorageWatch is in your menu bar (top right) and opens at login.")
 
 def uninstall():
     for agent in (LAUNCH_AGENT, MENU_BAR_AGENT):

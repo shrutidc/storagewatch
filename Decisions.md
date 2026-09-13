@@ -168,6 +168,18 @@ a delayed or missed sizing pass does not read as a spike.
 mean a disk that logged one retry a year ago raises an alert every sixty seconds for the
 rest of its life. The collector keeps the previous counts and reports only an increase.
 
+### The collector runs on any Mac's Python, and says when a size is partial
+
+The installer briefly required Python 3.10, which stopped every Mac whose newest Python
+is Apple's 3.9.6 — most Macs without Homebrew — although the collector runs on 3.9
+(verified end to end against a stub backend, and its sizing on 3.9.6 and 3.12). It now
+accepts 3.9+, prefers the newest, and on a Mac with no Command Line Tools opens Apple's
+installer instead of dead-ending. Separately, `du` skips what it can't read and still
+prints a total, so a standard account — or any account without Full Disk Access —
+reported partial home sizes as complete; those are now flagged and shown as a lower
+bound. The menu bar app's LaunchAgent now starts it directly with KeepAlive on crash, so
+it comes back if it dies but stays closed after Quit.
+
 ### Missing secrets abort startup
 
 Absent `AUTH0_DOMAIN` or `AUTH0_AUDIENCE`, the process exits. Failing

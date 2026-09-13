@@ -326,15 +326,17 @@ def insert_user_usage(owner_sub, hostname, users, measured_at):
         rows.append((measured_at, owner_sub, hostname, u["username"], u.get("uid"),
                      u.get("home"), u["used_bytes"], bool(quota.get("enabled")),
                      soft, hard, sum(f.get("file_count", 0) for f in limits),
-                     json.dumps(u.get("largest_folders") or [])))
+                     json.dumps(u.get("largest_folders") or []),
+                     # False when du couldn't read everything: a lower bound.
+                     u.get("complete", True)))
     if not rows:
         return 0
     with connection() as conn, conn.cursor() as cur:
         cur.executemany("""
             INSERT INTO user_usage (time, owner_sub, hostname, username, uid, home,
                                     used_bytes, quota_enabled, quota_soft_bytes,
-                                    quota_hard_bytes, file_count, largest_folders)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                    quota_hard_bytes, file_count, largest_folders, complete)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, rows)
     return len(rows)
 
@@ -344,7 +346,7 @@ def get_user_usage_latest(owner_sub, hostname=None):
     return _all("""
         SELECT DISTINCT ON (username)
                username, uid, home, used_bytes, quota_enabled, quota_soft_bytes,
-               quota_hard_bytes, file_count, largest_folders, time,
+               quota_hard_bytes, file_count, largest_folders, complete, time,
                used_bytes - lag(used_bytes) OVER (PARTITION BY username ORDER BY time)
                    AS growth_bytes,
                lag(time) OVER (PARTITION BY username ORDER BY time) AS previous_time
@@ -409,7 +411,7 @@ def get_dashboard(owner_sub, hostname=None):
               SELECT DISTINCT ON (username)
                      username, uid, home, used_bytes, quota_enabled,
                      quota_soft_bytes, quota_hard_bytes, file_count,
-                     largest_folders, time,
+                     largest_folders, complete, time,
                      used_bytes - lag(used_bytes) OVER w AS growth_bytes,
                      lag(time) OVER w AS previous_time
               FROM user_usage

@@ -144,3 +144,7 @@ CREATE TABLE IF NOT EXISTS user_usage (
 
 CREATE INDEX IF NOT EXISTS idx_user_usage_owner_host_time
     ON user_usage (owner_sub, hostname, username, time DESC);
+
+-- False when the collector couldn't read every folder — another user's home, or
+-- privacy-protected folders without Full Disk Access — so the size is a floor.
+ALTER TABLE user_usage ADD COLUMN IF NOT EXISTS complete BOOLEAN DEFAULT TRUE;

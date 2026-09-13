@@ -83,7 +83,12 @@ function Users() {
                   <tr key={u.username}>
                     <td>{u.username}<span className="cell-note">uid {u.uid}</span></td>
                     <td><code>{u.home}</code></td>
-                    <td>{bytes(u.used_bytes)}</td>
+                    <td>
+                      {bytes(u.used_bytes)}
+                      {u.complete === false && (
+                        <span className="cell-note">partial — some folders unreadable</span>
+                      )}
+                    </td>
                     <td>
                       <span className={`pill ${share >= 60 ? 'warn' : ''}`}>
                         {share.toFixed(0)}%
@@ -116,6 +121,15 @@ function Users() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {rows.some(u => u.complete === false) && (
+        <p className="section-sub">
+          Sizes marked partial leave out folders the collector may not read: other
+          users' home directories, which a standard account can't open, and — until
+          Python is given Full Disk Access in System Settings → Privacy &amp; Security —
+          Documents, Desktop, Mail and similar protected folders. They are a lower bound.
+        </p>
       )}
 
       {systemInfo?.inode_usage?.length > 0 && (

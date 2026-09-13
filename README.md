@@ -276,10 +276,17 @@ told the dashboard already shows all of this, and to answer from it rather than
 suggesting a command to look it up. (The one thing `diskutil` prints that isn't here is
 volume case-sensitivity, which it exposes in no plist.)
 
-The installer requires **Python 3.10 or newer** and picks the newest one it finds.
-Plain `python3` on macOS is Apple's 3.9.6 from the Command Line Tools, so taking it would
-silently put the agent on 3.9; a virtualenv built by an older Python is replaced rather
-than reused, because `venv` will not change the interpreter of an existing one.
+The installer accepts **any Python 3.9 or newer** and picks the newest one it finds, so a
+Mac needs nothing beyond Apple's own 3.9.6 from the Command Line Tools; the collector is
+tested on 3.9.6 and 3.12. On a Mac without the Command Line Tools it opens Apple's
+installer for them and asks you to run the command again. The virtualenv is rebuilt on
+every install, because `venv` keeps whichever interpreter created it.
+
+Per-user sizes come from walking each home directory as the signed-in account. A
+standard account cannot open other users' homes, and macOS privacy controls hide
+Documents, Desktop, Mail and similar from a background process until Python is given
+**Full Disk Access** (System Settings → Privacy & Security). A size that missed any
+folder is marked **partial** on the Dashboard rather than passed off as the whole.
 
 ## Menu bar app
 
