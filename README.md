@@ -52,19 +52,30 @@ to access resource server"* and login never completes.
    `BACKBOARD_API_KEY`. Leave `AGENT_TOKEN` empty — the collector connects itself in
    step 4. `AUTH0_AUDIENCE` and `VITE_AUTH0_AUDIENCE` must match.
 
-2. **Python dependencies:**
+2. **Python dependencies** — build the virtualenv with an explicit 3.12, not
+   `python3`: on macOS that name is Apple's 3.9.6 from the Command Line Tools, and
+   the backend's `X | Y` annotations raise `TypeError` there.
    ```bash
-   python3 -m venv venv
+   python3.12 -m venv venv        # brew install python@3.12 if it is missing
    source venv/bin/activate
    pip install -r requirements.txt
    ```
 
 3. **Start the backend and dashboard**, each in its own terminal:
    ```bash
-   cd backend   && python main.py               # :8000
-   cd frontend  && npm install && npm run dev   # :3000
+   cd backend   && python main.py          # :8000
+   cd frontend  && npm ci && npm run dev   # :3000
    ```
-   The backend creates its tables on startup, so no manual migration step is needed.
+   `npm ci` rather than `npm install`: it installs exactly what the lockfile pins, so
+   the dev server runs the same Vite the production image builds with. The dev server
+   refuses to start if 3000 is taken instead of moving to 3001, because Auth0's
+   allowed callback URLs and the backend's CORS list both name 3000 — a relocated dev
+   server fails at login and looks like broken authentication.
+
+   The backend creates its tables on startup, so no manual migration step is needed. It
+   also refuses to report healthy until they exist: `GET /health` returning 503 with
+   *"database unavailable"* means `TIGER_DATABASE_URL` is wrong or unset, and the rest
+   of the API will 500 until it is fixed.
 
 4. **Start the collector** in a third terminal:
    ```bash
