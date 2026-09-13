@@ -239,8 +239,8 @@ One page, per the PRD's single-page dashboard (§21), where each fact appears on
 system status and host, then storage / read / write cards, then Alerts, I/O performance
 (graph, average and peak, totals since boot), APFS containers and volumes, Other volumes
 (local non-APFS only), Shared volumes, Physical disks with their health, Users and
-quotas, and the menu bar switch. Questions about any of it go to the **Ask AI** chat.
-**Settings** lists connected Macs and the install command. Polling pauses while the tab
+quotas. Questions about any of it go to the **Ask AI** chat.
+**Settings** lists connected Macs, the install command and the menu bar app switch. Polling pauses while the tab
 is in the background.
 
 **Physical disks** reports, per disk, its model, media, capacity and SMART status
@@ -299,7 +299,7 @@ that missed any folder is marked **partial** rather than passed off as the whole
 ## Menu bar app
 
 **StorageWatch** can also sit in the macOS menu bar and open at login. It is on by
-default; the **Menu bar app** switch at the bottom of the Dashboard turns it off or back
+default; the **Menu bar app** switch in Settings turns it off or back
 on per machine. A browser cannot reach the monitored Mac, so the choice is stored against
 that machine and the collector there applies it with its next report — a few seconds —
 installing or removing the app itself. Until that collector confirms what it did, the

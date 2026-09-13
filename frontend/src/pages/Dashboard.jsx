@@ -6,7 +6,6 @@ import Disks from './Disks.jsx'
 import Apfs from './Apfs.jsx'
 import NetworkVolumes from './NetworkVolumes.jsx'
 import Users from './Users.jsx'
-import MenuBarSetting from '../MenuBarSetting.jsx'
 
 const gb = (bytes) => `${(bytes / 1e9).toFixed(1)} GB`
 const mbps = (bytes) => (bytes / 1e6).toFixed(0)
@@ -55,7 +54,6 @@ function Dashboard() {
       <NetworkVolumes />
       <Disks />
       <Users />
-      <MenuBarSetting />
     </>
   )
 }

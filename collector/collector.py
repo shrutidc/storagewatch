@@ -1206,7 +1206,7 @@ def install():
     # bar app against the dashboard's setting within a few seconds. Doing it
     # here as well would put the app back on a Mac where the administrator had
     # switched it off, only to remove it again moments later.
-    print("  The menu bar app follows the Menu bar app switch on your dashboard.")
+    print("  The menu bar app follows the Menu bar app switch in the dashboard's Settings.")
     # An app installed by an older collector was started with `open` and never
     # restarted if it died; re-register it the current way.
     if menu_bar_installed():
