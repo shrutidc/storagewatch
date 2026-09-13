@@ -42,6 +42,8 @@
   --terminal-bg: #1e1e2e;
   --terminal-fg: #9ece6a;
   --text-terminal-dim: #b0b0c0;
+  /* Transparent in light: the shadow alone separates a card there. */
+  --surface-border: transparent;
   --shadow: rgba(0,0,0,0.1);
   --shadow-2: rgba(0,0,0,0.15);
   --shadow-3: rgba(0,0,0,0.2);
@@ -54,44 +56,52 @@
    status colours are lightened for contrast against a dark fill while their
    tinted backgrounds become low-opacity washes. */
 [data-theme="dark"] {
-  --bg: #15161a;
-  --bg-subtle: #1c1e24;
-  --surface: #1e2027;
-  --surface-alt: #23262e;
-  --surface-muted: #2a2d36;
-  --border-faint: #2a2d36;
-  --border: #32363f;
-  --border-strong: #3c414c;
-  --border-input: #454b57;
-  --text: #e6e6e6;
-  --text-2: #dcdcdc;
-  --text-3: #c9c9c9;
-  --text-muted: #a8adb8;
-  --text-muted-2: #9aa0ab;
-  --text-dim: #8b909b;
-  --text-dimmer: #7c818c;
+  /* Contrast first: the previous values sat too close together, so cards, page
+     and table headers were all the same near-black and text was grey on grey.
+     Surfaces now step up clearly as they come forward, every panel gets a
+     1px ring because shadows do not read on dark, and body text is bright
+     enough to scan a table without effort while stopping short of pure white. */
+  --bg: #0d1117;
+  --bg-subtle: #1c2128;
+  --surface: #161b22;
+  --surface-alt: #1c2128;
+  --surface-muted: #21262d;
+  --border-faint: #21262d;
+  --border: #30363d;
+  --border-strong: #3d444d;
+  --border-input: #4a515b;
+  --surface-border: #30363d;
+  --text: #e6edf3;
+  --text-2: #dbe3ea;
+  --text-3: #cbd5df;
+  --text-muted: #b0bac5;
+  --text-muted-2: #a3adb9;
+  --text-dim: #97a1ad;
+  --text-dimmer: #8b949e;
   --on-accent: #ffffff;
-  --accent: #8b9cf7;
+  --accent: #7c8cf8;
   --accent-2: #a78bfa;
-  --accent-soft: rgba(139,156,247,0.18);
-  --hover-veil: rgba(255,255,255,0.06);
-  --ok-text: #6ee7a0;
-  --ok-text-2: #6ee7a0;
-  --ok-bg: rgba(110,231,160,0.14);
-  --bad-text: #ff8a8a;
-  --bad-text-2: #ff7070;
-  --bad-bg: rgba(255,138,138,0.14);
+  --accent-soft: rgba(124,140,248,0.20);
+  --hover-veil: rgba(255,255,255,0.07);
+  /* Status text is lightened for contrast against a dark fill; the tinted
+     backgrounds become low-opacity washes so they tint without glowing. */
+  --ok-text: #56d98a;
+  --ok-text-2: #56d98a;
+  --ok-bg: rgba(86,217,138,0.16);
+  --bad-text: #ff8f8f;
+  --bad-text-2: #ff7b7b;
+  --bad-bg: rgba(255,143,143,0.16);
   --warn-text: #ffb454;
   --warn-text-2: #ffa726;
-  --warn-bg: rgba(255,180,84,0.14);
-  --info-text: #7cc0ff;
-  --info-bg: rgba(124,192,255,0.14);
-  --neutral-text: #b6c2cc;
-  --neutral-bg: rgba(182,194,204,0.12);
-  --shadow: rgba(0,0,0,0.4);
-  --shadow-2: rgba(0,0,0,0.5);
-  --shadow-3: rgba(0,0,0,0.6);
-  --shadow-4: rgba(0,0,0,0.65);
+  --warn-bg: rgba(255,180,84,0.16);
+  --info-text: #79c0ff;
+  --info-bg: rgba(121,192,255,0.16);
+  --neutral-text: #c2ccd6;
+  --neutral-bg: rgba(194,204,214,0.14);
+  --shadow: rgba(0,0,0,0.5);
+  --shadow-2: rgba(0,0,0,0.55);
+  --shadow-3: rgba(0,0,0,0.65);
+  --shadow-4: rgba(0,0,0,0.7);
   color-scheme: dark;
 }
 
@@ -160,7 +170,7 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 1px 3px var(--shadow);
+  box-shadow: 0 0 0 1px var(--surface-border), 0 1px 3px var(--shadow);
 }
 
 .header-left {
@@ -229,7 +239,7 @@ main {
   background: var(--surface);
   padding: 40px;
   border-radius: 8px;
-  box-shadow: 0 10px 40px var(--shadow-3);
+  box-shadow: 0 0 0 1px var(--surface-border), 0 10px 40px var(--shadow-3);
   text-align: center;
   max-width: 400px;
 }
@@ -273,7 +283,7 @@ main {
   background: var(--surface);
   padding: 20px;
   border-radius: 8px;
-  box-shadow: 0 1px 3px var(--shadow);
+  box-shadow: 0 0 0 1px var(--surface-border), 0 1px 3px var(--shadow);
   transition: box-shadow 0.2s;
 }
 
@@ -327,7 +337,7 @@ main {
   background: var(--surface);
   padding: 20px;
   border-radius: 8px;
-  box-shadow: 0 1px 3px var(--shadow);
+  box-shadow: 0 0 0 1px var(--surface-border), 0 1px 3px var(--shadow);
   margin-bottom: 30px;
 }
 
@@ -341,7 +351,7 @@ main {
   background: var(--surface);
   padding: 20px;
   border-radius: 8px;
-  box-shadow: 0 1px 3px var(--shadow);
+  box-shadow: 0 0 0 1px var(--surface-border), 0 1px 3px var(--shadow);
   margin-bottom: 20px;
 }
 
@@ -540,7 +550,7 @@ main {
   background: var(--surface);
   padding: 20px;
   border-radius: 8px;
-  box-shadow: 0 1px 3px var(--shadow);
+  box-shadow: 0 0 0 1px var(--surface-border), 0 1px 3px var(--shadow);
 }
 
 .alerts-container h2 {
