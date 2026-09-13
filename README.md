@@ -237,5 +237,10 @@ storagewatch/
 ├── backend/            # FastAPI server, auth, anomaly detection, schema
 ├── frontend/           # React dashboard (Vite)
 ├── requirements.txt    # Python dependencies
-└── README.md
+├── README.md
+└── LICENSE
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
