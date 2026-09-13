@@ -1,18 +1,22 @@
 import { useAuth0 } from '@auth0/auth0-react'
 import { useState, useEffect } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import './App.css'
 
 function App() {
   const { loginWithRedirect, logout, user, isAuthenticated, isLoading,
           getAccessTokenSilently } = useAuth0()
+  const location = useLocation()
   const [metrics, setMetrics] = useState(null)
   const [history, setHistory] = useState([])
   const [alerts, setAlerts] = useState([])
   const [volumes, setVolumes] = useState([])
   const [systemInfo, setSystemInfo] = useState(null)
   const [lastRefresh, setLastRefresh] = useState(null)
+  const [hosts, setHosts] = useState([])
+  // null = follow whichever machine reported most recently
+  const [selectedHost, setSelectedHost] = useState(null)
   const [authError, setAuthError] = useState(null)
 
   const [chatMessages, setChatMessages] = useState([])
@@ -27,7 +31,7 @@ function App() {
       const interval = setInterval(fetchAll, 5000)
       return () => clearInterval(interval)
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, selectedHost])
 
   // The backend verifies this token, so every API call has to carry it.
   const authConfig = async () => ({
@@ -46,13 +50,23 @@ function App() {
       return
     }
 
+    // Scope every request to one machine, otherwise a user running two
+    // collectors sees both machines' readings interleaved as if they were one
+    // disk. Omitting it lets the backend pick the most recent reporter.
+    const host = selectedHost
+      ? { params: { hostname: selectedHost } }
+      : {}
+    const scoped = { ...cfg, ...host }
+
     try {
-      const [current, hist, alertsData, volumesData] = await Promise.all([
-        axios.get('/api/metrics/current', cfg),
-        axios.get('/api/metrics/history?limit=100', cfg),
-        axios.get('/api/alerts', cfg),
-        axios.get('/api/volumes', cfg),
+      const [current, hist, alertsData, volumesData, hostsData] = await Promise.all([
+        axios.get('/api/metrics/current', scoped),
+        axios.get('/api/metrics/history?limit=100', scoped),
+        axios.get('/api/alerts', scoped),
+        axios.get('/api/volumes', scoped),
+        axios.get('/api/hosts', cfg),
       ])
+      if (Array.isArray(hostsData.data)) setHosts(hostsData.data)
       setMetrics(current.data)
 
       if (hist.data && Array.isArray(hist.data)) {
@@ -76,7 +90,7 @@ function App() {
       // System info (disk/APFS) refreshes slowly on the collector side (~60s)
       // and may 404 briefly on first load — don't let that break the main poll.
       try {
-        const sysInfo = await axios.get('/api/system-info', cfg)
+        const sysInfo = await axios.get('/api/system-info', scoped)
         setSystemInfo(sysInfo.data)
       } catch (err) {
         // not received yet — fine, keep previous value
@@ -149,6 +163,7 @@ function App() {
         <NavLink to="/alerts" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>
           Alerts{alerts.length > 0 ? ` (${alerts.length})` : ''}
         </NavLink>
+        <NavLink to="/settings" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Settings</NavLink>
       </nav>
 
       <div className="main-column">
@@ -161,6 +176,18 @@ function App() {
             )}
           </div>
           <div className="user-info">
+            {hosts.length > 1 && (
+              <select
+                className="host-select"
+                value={selectedHost || ''}
+                onChange={e => setSelectedHost(e.target.value || null)}
+              >
+                <option value="">Most recent machine</option>
+                {hosts.map(h => (
+                  <option key={h.hostname} value={h.hostname}>{h.hostname}</option>
+                ))}
+              </select>
+            )}
             <span>{user.name}</span>
             <button onClick={() => logout()}>Logout</button>
           </div>
@@ -178,10 +205,14 @@ function App() {
               </p>
               <p className="alert-ai-explanation">{authError}</p>
             </div>
-          ) : metrics ? (
-            <Outlet context={{ metrics, history, alerts, volumes, systemInfo, lastRefresh }} />
+          ) : (metrics || location.pathname === '/settings') ? (
+            // Settings must render without metrics: a new user has no data
+            // until they mint an agent token, which is on that very page.
+            <Outlet context={{ metrics, history, alerts, volumes, systemInfo, lastRefresh, hosts, authConfig }} />
           ) : (
-            <p className="no-data">No metrics available yet. Backend may be starting up...</p>
+            <p className="no-data">
+              No metrics yet. Add an agent token under Settings and start the collector.
+            </p>
           )}
         </main>
       </div>

@@ -5,19 +5,21 @@ Two kinds of caller reach this API and they authenticate differently:
 - An administrator's browser, holding an Auth0 access token for the signed-in
   user. Verified against Auth0's public keys.
 - The collector agent, which is an unattended process on the monitored Mac
-  with no user to sign in as. It presents a shared secret instead.
+  with no user to sign in as. It presents a token that identifies which user's
+  machines it is reporting for, so ingested telemetry is attributed to an owner
+  and never visible to anyone else.
 """
 
 import os
-import secrets
 
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from database import resolve_agent_token
+
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
 AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
-AGENT_TOKEN = os.getenv("AGENT_TOKEN")
 
 # auto_error=False so a missing header produces our own 401 rather than a 403,
 # which is what HTTPBearer returns by default and is the wrong code here.
@@ -63,13 +65,15 @@ def require_user(
 
 def require_agent(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-) -> None:
-    """Authenticate the collector agent via its shared secret."""
+) -> str:
+    """Authenticate a collector agent and return the owner it reports for."""
     if not credentials:
         raise _unauthorized("Missing agent token")
-    # Constant-time compare so a wrong token can't be recovered by timing.
-    if not secrets.compare_digest(credentials.credentials, AGENT_TOKEN):
+
+    owner_sub = resolve_agent_token(credentials.credentials)
+    if not owner_sub:
         raise _unauthorized("Invalid agent token")
+    return owner_sub
 
 
 def check_config() -> None:
@@ -78,7 +82,6 @@ def check_config() -> None:
         name for name, value in (
             ("AUTH0_DOMAIN", AUTH0_DOMAIN),
             ("AUTH0_AUDIENCE", AUTH0_AUDIENCE),
-            ("AGENT_TOKEN", AGENT_TOKEN),
         ) if not value
     ]
     if missing:

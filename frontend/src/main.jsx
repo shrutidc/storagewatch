@@ -9,6 +9,7 @@ import Disks from './pages/Disks.jsx'
 import Apfs from './pages/Apfs.jsx'
 import Performance from './pages/Performance.jsx'
 import Alerts from './pages/Alerts.jsx'
+import Settings from './pages/Settings.jsx'
 
 const domain = import.meta.env.VITE_AUTH0_DOMAIN
 const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID
@@ -34,6 +35,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="apfs" element={<Apfs />} />
           <Route path="performance" element={<Performance />} />
           <Route path="alerts" element={<Alerts />} />
+          <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
     </BrowserRouter>

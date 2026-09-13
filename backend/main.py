@@ -10,7 +10,10 @@ import requests
 import time
 from pathlib import Path
 from models import Metrics, MetricsResponse, Alert
-from database import init_db, insert_metrics, get_latest_metrics, get_metrics_history, insert_alert, update_alert_explanation, get_recent_alerts, get_all_volumes_latest, save_system_info, get_system_info
+from database import (init_db, insert_metrics, get_latest_metrics, get_metrics_history,
+                      insert_alert, update_alert_explanation, get_recent_alerts,
+                      get_all_volumes_latest, save_system_info, get_system_info,
+                      get_hosts, create_agent_token, list_agent_tokens)
 from alerts import detect_anomalies
 from auth import require_user, require_agent, check_config
 
@@ -37,11 +40,12 @@ def startup():
 async def health_check():
     return {"status": "ok"}
 
-@app.post("/api/metrics", dependencies=[Depends(require_agent)])
-async def post_metrics(metrics: Metrics, background_tasks: BackgroundTasks):
+@app.post("/api/metrics")
+async def post_metrics(metrics: Metrics, background_tasks: BackgroundTasks,
+                       owner_sub: str = Depends(require_agent)):
     """Receive telemetry from monitoring agent."""
     try:
-        insert_metrics(metrics)
+        insert_metrics(owner_sub, metrics)
 
         # Detect anomalies
         anomalies = detect_anomalies(metrics)
@@ -51,6 +55,7 @@ async def post_metrics(metrics: Metrics, background_tasks: BackgroundTasks):
         # the collector's 5-second ingestion loop.
         for anomaly in anomalies:
             alert_id = insert_alert(
+                owner_sub=owner_sub,
                 hostname=metrics.hostname,
                 alert_type=anomaly["type"],
                 severity=anomaly["severity"],
@@ -63,66 +68,114 @@ async def post_metrics(metrics: Metrics, background_tasks: BackgroundTasks):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/metrics/current", dependencies=[Depends(require_user)])
-async def get_current_metrics(filesystem: str = "/"):
-    """Return the most recent metrics for a given volume (default: boot volume)."""
+@app.get("/api/metrics/current")
+async def get_current_metrics(filesystem: str = "/", hostname: str | None = None,
+                              user: dict = Depends(require_user)):
+    """Most recent sample for a volume on one of the caller's machines."""
     try:
-        result = get_latest_metrics(filesystem)
+        result = get_latest_metrics(user["sub"], filesystem, hostname)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     if not result:
         raise HTTPException(status_code=404, detail="No metrics found")
     return dict(result)
 
-@app.get("/api/metrics/history", dependencies=[Depends(require_user)])
-async def get_metrics_history_endpoint(limit: int = 100, filesystem: str = "/"):
-    """Return historical metrics (last N records) for a given volume."""
+@app.get("/api/metrics/history")
+async def get_metrics_history_endpoint(limit: int = 100, filesystem: str = "/",
+                                       hostname: str | None = None,
+                                       user: dict = Depends(require_user)):
+    """Historical samples for a volume on one of the caller's machines."""
     try:
-        results = get_metrics_history(limit, filesystem)
+        results = get_metrics_history(user["sub"], limit, filesystem, hostname)
         return [dict(r) for r in results]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/volumes", dependencies=[Depends(require_user)])
-async def get_volumes():
-    """Return the latest metrics for every monitored volume."""
+@app.get("/api/volumes")
+async def get_volumes(hostname: str | None = None,
+                      user: dict = Depends(require_user)):
+    """Latest sample per volume on one of the caller's machines."""
     try:
-        results = get_all_volumes_latest()
+        results = get_all_volumes_latest(user["sub"], hostname)
         return [dict(r) for r in results]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/alerts", dependencies=[Depends(require_user)])
-async def get_alerts():
-    """Return recent alerts."""
+@app.get("/api/alerts")
+async def get_alerts(hostname: str | None = None,
+                     user: dict = Depends(require_user)):
+    """Unresolved alerts for the caller's machines."""
     try:
-        results = get_recent_alerts(limit=10)
+        results = get_recent_alerts(user["sub"], limit=10, hostname=hostname)
         return [dict(r) for r in results]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/system-info", dependencies=[Depends(require_agent)])
-async def post_system_info(data: dict):
+@app.post("/api/system-info")
+async def post_system_info(data: dict, owner_sub: str = Depends(require_agent)):
     """Receive disk/APFS system info from the collector (runs on the Mac, not here)."""
     try:
-        save_system_info(data)
+        save_system_info(owner_sub, data.get("hostname", "unknown"), data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"status": "ok"}
 
-@app.get("/api/system-info", dependencies=[Depends(require_user)])
-async def get_system_info_endpoint():
-    """Return the latest disk/APFS system info."""
+@app.get("/api/system-info")
+async def get_system_info_endpoint(hostname: str | None = None,
+                                   user: dict = Depends(require_user)):
+    """Disk/APFS inventory for one of the caller's machines."""
     try:
-        info = get_system_info()
+        info = get_system_info(user["sub"], hostname)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     if not info:
         raise HTTPException(status_code=404, detail="No system info received yet")
     return info
 
-@app.post("/api/alerts/report", dependencies=[Depends(require_agent)])
-async def report_alert(data: dict, background_tasks: BackgroundTasks):
+@app.get("/api/hosts")
+async def get_hosts_endpoint(user: dict = Depends(require_user)):
+    """Machines reporting for the signed-in user, most recently seen first."""
+    try:
+        return [
+            {"hostname": h["hostname"], "last_seen": h["last_seen"].isoformat()}
+            for h in get_hosts(user["sub"])
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/agent-tokens")
+async def list_agent_tokens_endpoint(user: dict = Depends(require_user)):
+    """Metadata for the caller's agent tokens. Never returns the tokens."""
+    try:
+        return [
+            {
+                "label": t["label"],
+                "created_at": t["created_at"].isoformat(),
+                "last_used_at": t["last_used_at"].isoformat() if t["last_used_at"] else None,
+            }
+            for t in list_agent_tokens(user["sub"])
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/agent-tokens")
+async def create_agent_token_endpoint(data: dict = None,
+                                      user: dict = Depends(require_user)):
+    """Mint an agent token for the caller's collector.
+
+    The plaintext is returned exactly once — only its hash is stored, so a
+    lost token is replaced rather than recovered.
+    """
+    label = (data or {}).get("label") or "collector"
+    try:
+        token = create_agent_token(user["sub"], label)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"token": token, "label": label}
+
+@app.post("/api/alerts/report")
+async def report_alert(data: dict, background_tasks: BackgroundTasks,
+                       owner_sub: str = Depends(require_agent)):
     """Receive an ad-hoc alert from the collector (e.g. disk health, volume disappeared)
     that isn't tied to a specific metrics sample, and generate its AI explanation."""
     hostname = data.get("hostname", "Unknown")
@@ -132,8 +185,8 @@ async def report_alert(data: dict, background_tasks: BackgroundTasks):
 
     try:
         alert_id = insert_alert(
-            hostname=hostname, alert_type=alert_type, severity=severity,
-            message=message, metric_value=None,
+            owner_sub=owner_sub, hostname=hostname, alert_type=alert_type,
+            severity=severity, message=message, metric_value=None,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -270,7 +323,7 @@ Proactively explain in 2-3 concise sentences: what's happening, the likely cause
         print(f"Failed to attach AI explanation to alert {alert_id}: {e}")
 
 
-def build_live_context() -> str:
+def build_live_context(owner_sub: str) -> str:
     """Snapshot the machine's current telemetry as grounding for the assistant.
 
     Without this the model has no idea which machine it's attached to, and a
@@ -288,7 +341,7 @@ def build_live_context() -> str:
     ]
 
     try:
-        volumes = get_all_volumes_latest()
+        volumes = get_all_volumes_latest(owner_sub)
         if volumes:
             lines.append(f"Host: {volumes[0]['hostname']}")
             lines.append(f"Monitored volumes ({len(volumes)}):")
@@ -308,7 +361,7 @@ def build_live_context() -> str:
         lines.append(f"(volume telemetry unavailable: {e})")
 
     try:
-        si = get_system_info()
+        si = get_system_info(owner_sub)
     except Exception:
         si = None
     if si:
@@ -338,7 +391,7 @@ def build_live_context() -> str:
         )
 
     try:
-        alerts = get_recent_alerts(limit=5)
+        alerts = get_recent_alerts(owner_sub, limit=5)
         if alerts:
             lines.append(f"Active alerts ({len(alerts)}):")
             for a in alerts:
@@ -351,8 +404,8 @@ def build_live_context() -> str:
     return "\n".join(lines)
 
 
-@app.post("/api/ai/chat", dependencies=[Depends(require_user)])
-async def ai_chat(data: dict):
+@app.post("/api/ai/chat")
+async def ai_chat(data: dict, user: dict = Depends(require_user)):
     """Conversational follow-up chat with the AI, using Backboard thread continuity."""
     message = data.get("message", "")
     thread_id = data.get("thread_id")
@@ -367,7 +420,8 @@ async def ai_chat(data: dict):
     # Rebuilt per turn so the assistant always sees current numbers, not the
     # state from whenever the conversation started.
     reply, new_thread_id = call_backboard(
-        message, thread_id, mock_reply, system_prompt=build_live_context()
+        message, thread_id, mock_reply,
+        system_prompt=build_live_context(user["sub"])
     )
     return {"message": reply, "thread_id": new_thread_id}
 

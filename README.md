@@ -111,10 +111,24 @@ every 5 seconds, which keeps the service awake as long as the Mac is running.
 | Caller | Credential |
 |---|---|
 | Dashboard (browser) | Auth0 access token, verified against the tenant's JWKS |
-| Collector agent | `AGENT_TOKEN` shared secret — it runs unattended with no user to sign in as |
+| Collector agent | A per-user agent token, minted from the dashboard's Settings page |
 
-The backend refuses to start if `AUTH0_DOMAIN`, `AUTH0_AUDIENCE` or `AGENT_TOKEN` is
-missing, rather than serving telemetry unprotected.
+The backend refuses to start without `AUTH0_DOMAIN` and `AUTH0_AUDIENCE`, rather than
+serving telemetry unprotected.
+
+### Data ownership
+
+Telemetry is private to the administrator whose agent produced it. Each agent token
+belongs to an Auth0 user; every ingested row records that owner, and every read is
+filtered to the signed-in user. One person's machines are never visible to another,
+including to the AI assistant, whose context is built from the caller's own data.
+
+Agent tokens are stored only as a SHA-256 hash — a leaked database yields no working
+credentials — and the plaintext is shown once, when minted. Rows predating ownership
+have a NULL owner and are visible to nobody, which is the safe direction.
+
+A user with several machines picks between them with the host selector in the header;
+without one, the backend answers for whichever reported most recently.
 
 ## Architecture
 
