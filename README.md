@@ -265,6 +265,11 @@ told the dashboard already shows all of this, and to answer from it rather than
 suggesting a command to look it up. (The one thing `diskutil` prints that isn't here is
 volume case-sensitivity, which it exposes in no plist.)
 
+The installer requires **Python 3.10 or newer** and picks the newest one it finds.
+Plain `python3` on macOS is Apple's 3.9.6 from the Command Line Tools, so taking it would
+silently put the agent on 3.9; a virtualenv built by an older Python is replaced rather
+than reused, because `venv` will not change the interpreter of an existing one.
+
 ## Menu bar app
 
 **StorageWatch** can also sit in the macOS menu bar and open at login. It is on by
