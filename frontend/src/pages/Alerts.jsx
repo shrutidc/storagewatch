@@ -50,7 +50,7 @@ function Alerts() {
 
       <div className="detail-section">
         <h2>Alert Detail</h2>
-        <p className="section-sub">Each alert is explained automatically by the AI as it fires</p>
+        <p className="section-sub">Select an alert on the Dashboard and click Explain with AI to analyze it</p>
         {alerts.length === 0 ? (
           <p className="no-alerts">✓ No active alerts</p>
         ) : (
@@ -66,9 +66,9 @@ function Alerts() {
                   Severity: {a.severity} · Host: {a.hostname}
                   {a.metric_value != null ? ` · Value: ${a.metric_value.toFixed(2)}` : ''}
                 </p>
-                <p className="alert-ai-explanation">
-                  {a.ai_explanation ? `💡 ${a.ai_explanation}` : '💭 Generating AI explanation...'}
-                </p>
+                {a.ai_explanation && (
+                  <p className="alert-ai-explanation">💡 {a.ai_explanation}</p>
+                )}
               </div>
             ))}
           </div>

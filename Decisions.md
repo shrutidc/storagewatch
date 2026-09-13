@@ -62,13 +62,14 @@ public domain.
 
 The two callers cannot authenticate the same way: the dashboard has a signed-in human,
 the collector runs unattended. So the dashboard sends an Auth0 access token verified
-against the tenant's JWKS, and the collector presents a shared secret. Critically the
+against the tenant's JWKS, and the collector presents a per-user agent token minted
+from the dashboard and stored only as a hash. Critically the
 roles are **disjoint** — the agent token is refused on dashboard reads and a user token
 is refused on ingest. A compromised agent secret cannot read history.
 
 ### Missing secrets abort startup
 
-Absent `AUTH0_DOMAIN`, `AUTH0_AUDIENCE` or `AGENT_TOKEN`, the process exits. Failing
+Absent `AUTH0_DOMAIN` or `AUTH0_AUDIENCE`, the process exits. Failing
 open here means silently serving unprotected telemetry, and nobody notices until it
 matters.
 
@@ -148,11 +149,21 @@ Each turn now assembles volumes, capacity, throughput, disks, APFS roles, encryp
 FileVault, snapshots and active alerts from the database. Rebuilt **per turn** rather
 than per conversation, so a long chat cannot drift onto stale figures.
 
-### Alert explanations run in a background task
+### Alerts are explained on demand, not automatically
 
-An LLM round-trip takes seconds; the collector posts every five. Generating the
-explanation inline would stall ingestion. The alert row is written immediately and the
-explanation attached when it arrives.
+Every alert used to trigger a background LLM call, so a burst of alerts meant a burst of
+spend nobody necessarily read. The dashboard's **Explain with AI** button now calls
+`POST /api/ai/explain` for the selected alert, as the PRD specifies, and the answer is
+stored on the alert. The AI handlers are plain `def` so FastAPI runs them in a worker
+thread: the LLM call blocks for seconds and would otherwise stall ingestion on the event
+loop.
+
+### Pages fetch only what they display
+
+The dashboard used to poll six endpoints every five seconds on every page, including two
+that scan the whole metrics history. Each page now requests only its own data, the
+machine list loads at sign-in and on Settings, `/api/volumes` scans only the last hour,
+and polling pauses while the tab is in the background.
 
 ---
 
@@ -243,3 +254,15 @@ does not exist and send people debugging the wrong thing.
 `/api/metrics/history` returns newest-first. Plotted unreversed, the x-axis ran backwards
 in time. The frontend reverses for display, and Performance takes its "current" value
 from the end of the series accordingly.
+
+### The write baseline excludes the sample being judged
+
+Averaging the current sample into its own baseline dampens the spike being measured: on
+a five-sample window a 7× burst read as 3.2× and never fired. The baseline is now the
+previous samples only, kept per machine so one agent's writes can't set another's.
+
+### A persisting condition alerts once, not every sample
+
+A disk at 85% is at 85% on every 5-second sample, and each alert costs a row and an LLM
+call. An alert is skipped when the same machine raised the same type and severity in the
+last 10 minutes; a severity change (warning → critical) still fires.

@@ -33,8 +33,7 @@ main.py
   └─ load_dotenv()                 ← before any import that reads env at import time
   └─ FastAPI app, CORS
   └─ @on_event("startup")
-       ├─ check_config()           ← aborts if AUTH0_DOMAIN / AUTH0_AUDIENCE /
-       │                             AGENT_TOKEN missing
+       ├─ check_config()           ← aborts if AUTH0_DOMAIN / AUTH0_AUDIENCE missing
        └─ init_db()                ← applies schema.sql (idempotent)
   └─ routes registered in order; static catch-all declared LAST
 ```
@@ -57,7 +56,7 @@ main() loop, cycle N
   │         ├─ APFS?  → container size/free  (the real capacity constraint)
   │         └─ other? → psutil.disk_usage(mountpoint)
   │       used_percent = used / total * 100
-  ├─ for each: send_metrics()       → POST /api/metrics  + AGENT_TOKEN
+  ├─ for each: send_metrics()       → POST /api/metrics  + agent token
   ├─ if N % 12 == 0  (~60s)
   │    ├─ send_system_info()        → POST /api/system-info: disks, APFS, FileVault
   │    └─ check_disk_health()       → SMART status via diskutil
@@ -70,25 +69,16 @@ The first cycle reports `0` throughput — a rate needs two samples to exist.
 
 ```
 POST /api/metrics
-  ├─ Depends(require_agent)         → 401 unless AGENT_TOKEN matches
+  ├─ Depends(require_agent)         → token hash → owner_sub, else 401
   ├─ Metrics (Pydantic)             → 422 on shape mismatch
   ├─ insert_metrics()               → INSERT into filesystem_metrics
   ├─ detect_anomalies()
   │    ├─ check_capacity_alert()    → >=90 critical, >=80 warning
-  │    └─ check_io_anomaly()        → append to deque(maxlen=20);
-  │                                    needs >=5 samples; fires if > 4× mean
+  │    └─ check_io_anomaly()        → per-machine deque(maxlen=20); needs >=5 prior
+  │                                    samples; fires if > 4× their mean
   └─ for each anomaly
-       ├─ insert_alert()            → row written immediately, returns alert_id
-       └─ background_tasks.add_task(explain_alert_async, ...)
-                                    → responds NOW; LLM runs after
-```
-
-The background task is what keeps ingestion at 5-second cadence: an LLM round-trip takes
-seconds and would otherwise stall the collector's loop.
-
-```
-explain_alert_async (background)
-  └─ call_backboard(prompt)  →  update_alert_explanation(alert_id, text)
+       ├─ has_recent_alert()        → skip if same type+severity in last 10 min
+       └─ insert_alert()            → no LLM call; explained on demand (section 5b)
 ```
 
 ## 4. Dashboard load and poll
@@ -98,19 +88,21 @@ browser → /
   └─ Auth0Provider
        ├─ not authenticated → redirect to Auth0 → callback → tokens
        └─ authenticated
-            └─ useEffect: fetchAll(), then setInterval(fetchAll, 5000)
+            ├─ useEffect: fetchPage(), then setInterval(fetchPage, 5000)
+            │             re-run on page change or host change
+            └─ useEffect: fetchHosts() at sign-in and when Settings opens
 
-fetchAll()
+fetchPage()
+  ├─ document.hidden?                  → skip; background tabs don't poll
   ├─ getAccessTokenSilently()          → Authorization: Bearer <JWT>
   ├─ Promise.all, all Depends(require_user):
-  │    ├─ /api/metrics/current
-  │    ├─ /api/metrics/history?limit=100   → reversed for display (API is newest-first)
-  │    ├─ /api/alerts
-  │    └─ /api/volumes                     → grouped per storage pool
-  └─ then /api/system-info separately, in its own try/catch
-                                           → Disks + APFS pages; 404s until the
-                                             collector's first 60s cycle lands, so a
-                                             failure here must not break the main poll
+  │    ├─ /api/metrics/current            every page (header status + host)
+  │    ├─ /api/alerts                     every page (sidebar count)
+  │    ├─ /api/metrics/history?limit=100  Dashboard, Performance; reversed for display
+  │    └─ /api/volumes                    Volumes only; last hour, grouped per pool
+  └─ /api/system-info, own try/catch     Volumes, Disks, APFS, Performance; 404s until
+                                          the collector's first 60s cycle lands, so a
+                                          failure here must not break the main poll
 ```
 
 Each `require_user` call verifies the JWT against the tenant's JWKS, checking signature,
@@ -118,7 +110,8 @@ audience and issuer. An **opaque** token — what Auth0 returns when no register
 is requested — fails here, which surfaces as a logged-in dashboard with empty cards and
 401s in the network tab.
 
-Pages: `/` overview, `/volumes`, `/disks`, `/apfs`, `/performance`, `/alerts`.
+Pages: `/` the single-page dashboard (PRD §21), plus drill-downs `/volumes`, `/disks`,
+`/apfs`, `/performance`, `/alerts`, `/settings`.
 
 ## 5. AI chat turn
 
@@ -142,6 +135,21 @@ POST /api/ai/chat  { message, thread_id? }
 
 `thread_id` carries conversation continuity across turns; the grounding context is
 regenerated each time so answers cannot drift onto stale figures.
+
+## 5b. Explain with AI
+
+```
+Dashboard: select an alert → [Explain with AI]
+POST /api/ai/explain  { alert_id }
+  ├─ Depends(require_user)
+  ├─ get_alert(owner, id)                  → 404 unless the alert is the caller's
+  ├─ build_live_context(owner, alert.hostname)
+  ├─ call_backboard(PRD §20 prompt, system_prompt=context)
+  └─ update_alert_explanation(owner, ...)  → stored on the alert, shown on reload
+```
+
+A plain `def` handler, so it runs in FastAPI's worker pool and a slow LLM call never
+stalls ingestion on the event loop.
 
 ## 6. Request routing in production
 

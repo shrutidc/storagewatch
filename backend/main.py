@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, HTTPException, Depends, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from models import Metrics, MetricsResponse, Alert
 from database import (init_db, insert_metrics, get_latest_metrics, get_metrics_history,
-                      insert_alert, update_alert_explanation, get_recent_alerts,
+                      insert_alert, has_recent_alert, get_alert, update_alert_explanation, get_recent_alerts,
                       get_all_volumes_latest, save_system_info, get_system_info,
                       get_hosts, create_agent_token, list_agent_tokens)
 from alerts import detect_anomalies
@@ -41,20 +41,19 @@ async def health_check():
     return {"status": "ok"}
 
 @app.post("/api/metrics")
-async def post_metrics(metrics: Metrics, background_tasks: BackgroundTasks,
-                       owner_sub: str = Depends(require_agent)):
+async def post_metrics(metrics: Metrics, owner_sub: str = Depends(require_agent)):
     """Receive telemetry from monitoring agent."""
     try:
         insert_metrics(owner_sub, metrics)
 
-        # Detect anomalies
-        anomalies = detect_anomalies(metrics)
+        # Detect anomalies. Alerts are explained on demand (POST /api/ai/explain),
+        # so ingestion never waits on, or pays for, an LLM call.
+        anomalies = detect_anomalies(metrics, owner_sub)
 
-        # Store each alert immediately, then generate its AI explanation in the
-        # background — an LLM round-trip takes seconds and would otherwise stall
-        # the collector's 5-second ingestion loop.
         for anomaly in anomalies:
-            alert_id = insert_alert(
+            if has_recent_alert(owner_sub, metrics.hostname, anomaly["type"], anomaly["severity"]):
+                continue
+            insert_alert(
                 owner_sub=owner_sub,
                 hostname=metrics.hostname,
                 alert_type=anomaly["type"],
@@ -62,7 +61,6 @@ async def post_metrics(metrics: Metrics, background_tasks: BackgroundTasks,
                 message=anomaly["message"],
                 metric_value=metrics.used_percent if anomaly["type"] == "HIGH_CAPACITY" else metrics.write_bytes_per_sec,
             )
-            background_tasks.add_task(explain_alert_async, alert_id, anomaly, metrics)
 
         return {"status": "ok", "alerts": len(anomalies)}
     except Exception as e:
@@ -174,43 +172,22 @@ async def create_agent_token_endpoint(data: dict = None,
     return {"token": token, "label": label}
 
 @app.post("/api/alerts/report")
-async def report_alert(data: dict, background_tasks: BackgroundTasks,
-                       owner_sub: str = Depends(require_agent)):
+async def report_alert(data: dict, owner_sub: str = Depends(require_agent)):
     """Receive an ad-hoc alert from the collector (e.g. disk health, volume disappeared)
-    that isn't tied to a specific metrics sample, and generate its AI explanation."""
+    that isn't tied to a specific metrics sample."""
     hostname = data.get("hostname", "Unknown")
     alert_type = data.get("alert_type", "UNKNOWN")
     severity = data.get("severity", "warning")
     message = data.get("message", "")
 
     try:
-        alert_id = insert_alert(
+        insert_alert(
             owner_sub=owner_sub, hostname=hostname, alert_type=alert_type,
             severity=severity, message=message, metric_value=None,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    prompt = f"""You are an infrastructure observability assistant monitoring a macOS filesystem.
-
-Host: {hostname}
-Alert just triggered: {alert_type} ({severity}) - {message}
-
-Proactively explain in 2-3 concise sentences: what's happening, the likely cause, and one recommended action."""
-
-    mock_explanation = (
-        f"{message}. (Mock analysis — connect a BACKBOARD_API_KEY with LLM chat credits "
-        f"for real AI insights.)"
-    )
-
-    def explain():
-        explanation, _ = call_backboard(prompt, None, mock_explanation)
-        try:
-            update_alert_explanation(alert_id, explanation)
-        except Exception as e:
-            print(f"Failed to attach AI explanation to alert {alert_id}: {e}")
-
-    background_tasks.add_task(explain)
     return {"status": "ok"}
 
 # Backboard defaults to gpt-4o, which bills Backboard's own credits (reserved
@@ -296,34 +273,7 @@ def call_backboard(content: str, thread_id: str | None, mock_reply: str,
             "reported high demand). Please send that again."), thread_id
 
 
-def explain_alert_async(alert_id: int, anomaly: dict, metrics: Metrics) -> None:
-    """Generate a proactive AI explanation for an alert and attach it to the row."""
-    prompt = f"""You are an infrastructure observability assistant monitoring a macOS filesystem.
-
-Host: {metrics.hostname}
-Volume: {metrics.filesystem} ({metrics.filesystem_type})
-Storage utilization: {metrics.used_percent:.1f}%
-Current read throughput: {metrics.read_bytes_per_sec / 1e6:.0f} MB/s
-Current write throughput: {metrics.write_bytes_per_sec / 1e6:.0f} MB/s
-Alert just triggered: {anomaly['type']} ({anomaly['severity']}) - {anomaly['message']}
-
-Proactively explain in 2-3 concise sentences: what's happening, the likely cause, and one recommended action."""
-
-    mock_explanation = (
-        f"{anomaly['message']}. This can be caused by temporary file accumulation, "
-        f"a backup or sync job, or cache growth. Check recently modified files and "
-        f"~/Library/Caches if this persists. (Mock analysis — connect a BACKBOARD_API_KEY "
-        f"with LLM chat credits for real AI insights.)"
-    )
-
-    explanation, _ = call_backboard(prompt, None, mock_explanation)
-    try:
-        update_alert_explanation(alert_id, explanation)
-    except Exception as e:
-        print(f"Failed to attach AI explanation to alert {alert_id}: {e}")
-
-
-def build_live_context(owner_sub: str) -> str:
+def build_live_context(owner_sub: str, hostname: str | None = None) -> str:
     """Snapshot the machine's current telemetry as grounding for the assistant.
 
     Without this the model has no idea which machine it's attached to, and a
@@ -341,7 +291,7 @@ def build_live_context(owner_sub: str) -> str:
     ]
 
     try:
-        volumes = get_all_volumes_latest(owner_sub)
+        volumes = get_all_volumes_latest(owner_sub, hostname)
         if volumes:
             lines.append(f"Host: {volumes[0]['hostname']}")
             lines.append(f"Monitored volumes ({len(volumes)}):")
@@ -361,7 +311,7 @@ def build_live_context(owner_sub: str) -> str:
         lines.append(f"(volume telemetry unavailable: {e})")
 
     try:
-        si = get_system_info(owner_sub)
+        si = get_system_info(owner_sub, hostname)
     except Exception:
         si = None
     if si:
@@ -391,7 +341,7 @@ def build_live_context(owner_sub: str) -> str:
         )
 
     try:
-        alerts = get_recent_alerts(owner_sub, limit=5)
+        alerts = get_recent_alerts(owner_sub, limit=5, hostname=hostname)
         if alerts:
             lines.append(f"Active alerts ({len(alerts)}):")
             for a in alerts:
@@ -404,8 +354,11 @@ def build_live_context(owner_sub: str) -> str:
     return "\n".join(lines)
 
 
+# Both AI endpoints are plain `def`: the LLM call blocks for seconds, and FastAPI
+# runs sync handlers in a worker thread instead of on the event loop, so metrics
+# ingestion keeps flowing while the model answers.
 @app.post("/api/ai/chat")
-async def ai_chat(data: dict, user: dict = Depends(require_user)):
+def ai_chat(data: dict, user: dict = Depends(require_user)):
     """Conversational follow-up chat with the AI, using Backboard thread continuity."""
     message = data.get("message", "")
     thread_id = data.get("thread_id")
@@ -424,6 +377,45 @@ async def ai_chat(data: dict, user: dict = Depends(require_user)):
         system_prompt=build_live_context(user["sub"])
     )
     return {"message": reply, "thread_id": new_thread_id}
+
+@app.post("/api/ai/explain")
+def ai_explain(alert_id: int = Body(..., embed=True),
+               user: dict = Depends(require_user)):
+    """Explain one of the caller's alerts, grounded in that machine's live
+    telemetry. The answer is stored on the alert so it survives a reload."""
+    try:
+        alert = get_alert(user["sub"], alert_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    prompt = f"""Analyze this macOS filesystem event using the telemetry above.
+
+Alert: {alert['alert_type']} ({alert['severity']}) on {alert['hostname']}, raised at {alert['created_at'].isoformat()}
+Detected: {alert['message']}
+
+Explain:
+1. What happened.
+2. Possible causes.
+3. Severity.
+4. What the administrator should inspect.
+
+Keep the response concise and technical."""
+
+    mock_explanation = (
+        f"{alert['message']}. (Mock analysis — set BACKBOARD_API_KEY for real AI insights.)"
+    )
+
+    explanation, _ = call_backboard(
+        prompt, None, mock_explanation,
+        system_prompt=build_live_context(user["sub"], alert["hostname"]),
+    )
+    try:
+        update_alert_explanation(user["sub"], alert_id, explanation)
+    except Exception as e:
+        print(f"Failed to store AI explanation for alert {alert_id}: {e}")
+    return {"alert_id": alert_id, "explanation": explanation}
 
 # Serve the built dashboard from this same app, so the browser talks to one
 # origin and /api calls need no CORS or proxy. Vite's dev proxy only exists

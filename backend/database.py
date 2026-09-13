@@ -190,6 +190,9 @@ def get_all_volumes_latest(owner_sub, hostname=None):
         FROM filesystem_metrics
         WHERE owner_sub = %s
           AND (%s::text IS NULL OR hostname = %s)
+          -- Bounds the scan to recent hypertable chunks instead of the whole
+          -- history; a volume silent for an hour is no longer mounted anyway.
+          AND time > NOW() - INTERVAL '1 hour'
         ORDER BY filesystem, time DESC
     """, (owner_sub, hostname, hostname))
 
@@ -223,18 +226,50 @@ def insert_alert(owner_sub, hostname, alert_type, severity, message,
 
     return alert_id
 
-def update_alert_explanation(alert_id, ai_explanation):
-    """Attach an AI explanation to an existing alert (generated asynchronously).
+def has_recent_alert(owner_sub, hostname, alert_type, severity):
+    """Whether this machine raised this alert in the last 10 minutes.
 
-    Not owner-scoped because the id comes from insert_alert on the same
-    request, never from client input.
+    A condition persists across samples — a disk at 85% is at 85% every five
+    seconds — so without this each sample would add a row and an LLM call.
+    Severity is part of the key so warning -> critical still fires.
     """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT 1 FROM alerts
+        WHERE owner_sub = %s AND hostname = %s
+          AND alert_type = %s AND severity = %s
+          AND created_at > NOW() - INTERVAL '10 minutes'
+        LIMIT 1
+    """, (owner_sub, hostname, alert_type, severity))
+    found = cursor.fetchone() is not None
+    cursor.close()
+    conn.close()
+
+    return found
+
+def get_alert(owner_sub, alert_id):
+    """One of the user's alerts, or None — including when it is someone else's."""
+    conn = get_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("""
+        SELECT * FROM alerts WHERE owner_sub = %s AND id = %s
+    """, (owner_sub, alert_id))
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    return result
+
+def update_alert_explanation(owner_sub, alert_id, ai_explanation):
+    """Attach an AI explanation to one of the user's alerts. Owner-scoped
+    because the id comes from the browser."""
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
-        UPDATE alerts SET ai_explanation = %s WHERE id = %s
-    """, (ai_explanation, alert_id))
+        UPDATE alerts SET ai_explanation = %s WHERE id = %s AND owner_sub = %s
+    """, (ai_explanation, alert_id, owner_sub))
 
     conn.commit()
     cursor.close()

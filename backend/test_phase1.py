@@ -32,29 +32,25 @@ def test_write_anomaly():
     """Test write anomaly detection."""
     print("\n[TEST] Write Anomaly Detection")
 
-    # Build baseline (5 samples at 100 MB/s)
+    # Too few prior samples to judge yet
     for _ in range(5):
-        result = check_io_anomaly(100_000_000)
-        if result:
-            print(f"  Early alert (expected during baseline): {result}")
+        assert check_io_anomaly(100_000_000) is None, "Needs 5 prior samples"
+    print("✓ Warm-up (5 samples): no alert")
 
     # Normal write (100 MB/s, should not alert)
     result = check_io_anomaly(100_000_000)
     assert result is None, "Normal write should not alert"
     print("✓ Normal write (100 MB/s): no alert")
 
-    # High write (500 MB/s, 5x baseline - still below 4x, shouldn't trigger)
+    # 5x the previous samples' mean crosses the 4x threshold. The spike must not
+    # dampen its own baseline, so the ratio is exactly 5.
     result = check_io_anomaly(500_000_000)
-    assert result is None, "5x should not trigger yet (needs >4x)"
-    print("✓ 5x baseline (500 MB/s): no alert")
+    assert result is not None and result["ratio"] == 5.0, f"5x should alert, got {result}"
+    print(f"✓ 5x baseline (500 MB/s): {result['message']}")
 
-    # Very high write (450 MB/s average * 4.5 = should trigger)
-    # Actually, let me just test with the current average
-    result = check_io_anomaly(450_000_000)
-    if result:
-        print(f"✓ High write detected: {result['message']}")
-    else:
-        print("⚠ Expected anomaly not triggered (deque average may differ)")
+    # Another machine's baseline is separate, so it has no history yet
+    assert check_io_anomaly(500_000_000, key="other-mac") is None, "Baselines must be per machine"
+    print("✓ Per-machine baseline")
 
 def test_metrics_model():
     """Test Metrics model validation."""

@@ -4,6 +4,17 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import './App.css'
 
+// What each page displays, beyond the metrics and alerts the header needs on
+// every page. Nothing else is requested: each call costs the server a token
+// check and a database round-trip, twelve times a minute.
+const PAGE_DATA = {
+  '/': ['history'],
+  '/volumes': ['volumes', 'systemInfo'],
+  '/disks': ['systemInfo'],
+  '/apfs': ['systemInfo'],
+  '/performance': ['history', 'systemInfo'],
+}
+
 function App() {
   const { loginWithRedirect, logout, user, isAuthenticated, isLoading,
           getAccessTokenSilently } = useAuth0()
@@ -25,20 +36,40 @@ function App() {
   const [chatSending, setChatSending] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
 
+  const onSettings = location.pathname === '/settings'
+
   useEffect(() => {
     if (isAuthenticated) {
-      fetchAll()
-      const interval = setInterval(fetchAll, 5000)
+      fetchPage()
+      const interval = setInterval(fetchPage, 5000)
       return () => clearInterval(interval)
     }
-  }, [isAuthenticated, selectedHost])
+  }, [isAuthenticated, selectedHost, location.pathname])
+
+  // The machine list changes rarely, so it loads at sign-in and when Settings
+  // opens rather than on every poll — the query scans the whole history.
+  useEffect(() => {
+    if (isAuthenticated) fetchHosts()
+  }, [isAuthenticated, onSettings])
 
   // The backend verifies this token, so every API call has to carry it.
   const authConfig = async () => ({
     headers: { Authorization: `Bearer ${await getAccessTokenSilently()}` },
   })
 
-  const fetchAll = async () => {
+  const fetchHosts = async () => {
+    try {
+      const res = await axios.get('/api/hosts', await authConfig())
+      if (Array.isArray(res.data)) setHosts(res.data)
+    } catch (err) {
+      console.error('Failed to fetch hosts:', err)
+    }
+  }
+
+  const fetchPage = async () => {
+    // A tab left open in the background would otherwise poll around the clock.
+    if (document.hidden) return
+
     let cfg
     try {
       cfg = await authConfig()
@@ -57,19 +88,23 @@ function App() {
       ? { params: { hostname: selectedHost } }
       : {}
     const scoped = { ...cfg, ...host }
+    const needs = PAGE_DATA[location.pathname] || []
+    const fetchIf = (key, url) => needs.includes(key) ? axios.get(url, scoped) : null
 
     try {
-      const [current, hist, alertsData, volumesData, hostsData] = await Promise.all([
+      const [current, alertsData, hist, volumesData] = await Promise.all([
         axios.get('/api/metrics/current', scoped),
-        axios.get('/api/metrics/history?limit=100', scoped),
         axios.get('/api/alerts', scoped),
-        axios.get('/api/volumes', scoped),
-        axios.get('/api/hosts', cfg),
+        fetchIf('history', '/api/metrics/history?limit=100'),
+        fetchIf('volumes', '/api/volumes'),
       ])
-      if (Array.isArray(hostsData.data)) setHosts(hostsData.data)
       setMetrics(current.data)
 
-      if (hist.data && Array.isArray(hist.data)) {
+      if (alertsData.data && Array.isArray(alertsData.data)) {
+        setAlerts(alertsData.data)
+      }
+
+      if (hist && Array.isArray(hist.data)) {
         // API returns newest-first; charts need oldest-first so time reads
         // left-to-right.
         setHistory(hist.data.slice().reverse().map(m => ({
@@ -79,21 +114,19 @@ function App() {
         })))
       }
 
-      if (alertsData.data && Array.isArray(alertsData.data)) {
-        setAlerts(alertsData.data)
-      }
-
-      if (volumesData.data && Array.isArray(volumesData.data)) {
+      if (volumesData && Array.isArray(volumesData.data)) {
         setVolumes(volumesData.data)
       }
 
-      // System info (disk/APFS) refreshes slowly on the collector side (~60s)
-      // and may 404 briefly on first load — don't let that break the main poll.
-      try {
-        const sysInfo = await axios.get('/api/system-info', scoped)
-        setSystemInfo(sysInfo.data)
-      } catch (err) {
-        // not received yet — fine, keep previous value
+      if (needs.includes('systemInfo')) {
+        // System info (disk/APFS) refreshes slowly on the collector side (~60s)
+        // and may 404 briefly on first load — don't let that break the main poll.
+        try {
+          const sysInfo = await axios.get('/api/system-info', scoped)
+          setSystemInfo(sysInfo.data)
+        } catch (err) {
+          // not received yet — fine, keep previous value
+        }
       }
 
       setLastRefresh(new Date())
@@ -170,9 +203,12 @@ function App() {
         <header>
           <div className="header-left">
             {metrics && (
-              <div className="status-badge" style={{ backgroundColor: getStatusColor() }}>
-                {getSystemStatus()}
-              </div>
+              <>
+                <div className="status-badge" style={{ backgroundColor: getStatusColor() }}>
+                  System {getSystemStatus()}
+                </div>
+                <span className="header-host">{metrics.hostname}</span>
+              </>
             )}
           </div>
           <div className="user-info">
@@ -205,7 +241,7 @@ function App() {
               </p>
               <p className="alert-ai-explanation">{authError}</p>
             </div>
-          ) : (metrics || location.pathname === '/settings') ? (
+          ) : (metrics || onSettings) ? (
             // Settings must render without metrics: a new user has no data
             // until they mint an agent token, which is on that very page.
             <Outlet context={{ metrics, history, alerts, volumes, systemInfo, lastRefresh, hosts, authConfig }} />

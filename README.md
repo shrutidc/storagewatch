@@ -43,12 +43,9 @@ to access resource server"* and login never completes.
    cp .env.example .env                     # backend + collector
    cp frontend/.env.example frontend/.env   # frontend (Vite reads VITE_* here only)
    ```
-   Fill in `TIGER_DATABASE_URL`, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`,
-   `BACKBOARD_API_KEY`, and generate the collector's shared secret:
-   ```bash
-   python3 -c "import secrets; print(secrets.token_urlsafe(32))"   # -> AGENT_TOKEN
-   ```
-   `AUTH0_AUDIENCE` and `VITE_AUTH0_AUDIENCE` must match.
+   Fill in `TIGER_DATABASE_URL`, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE` and
+   `BACKBOARD_API_KEY`. Leave `AGENT_TOKEN` empty for now — it is minted from the
+   dashboard in step 4. `AUTH0_AUDIENCE` and `VITE_AUTH0_AUDIENCE` must match.
 
 2. **Python dependencies:**
    ```bash
@@ -57,15 +54,19 @@ to access resource server"* and login never completes.
    pip install -r requirements.txt
    ```
 
-3. **Run all three, each in its own terminal** (they are long-running):
+3. **Start the backend and dashboard**, each in its own terminal:
    ```bash
    cd backend   && python main.py               # :8000
    cd frontend  && npm install && npm run dev   # :3000
+   ```
+   The backend creates its tables on startup, so no manual migration step is needed.
+
+4. **Connect the collector.** Log in at `http://localhost:3000`, open **Settings →
+   Generate agent token**, and put it in `.env` as `AGENT_TOKEN=…` (it is shown once).
+   Then, in a third terminal:
+   ```bash
    cd collector && python collector.py
    ```
-
-Dashboard at `http://localhost:3000`. The backend creates its tables on startup, so no
-manual migration step is needed.
 
 ### Production build
 
@@ -90,7 +91,7 @@ dashboard, Python to serve it — and Render's native Python runtime has no Node
 
 1. Render dashboard → **New → Blueprint** → pick this repo. It reads
    `render.yaml` and prompts for the secrets marked `sync: false`:
-   `TIGER_DATABASE_URL`, `BACKBOARD_API_KEY`, `AGENT_TOKEN`.
+   `TIGER_DATABASE_URL`, `BACKBOARD_API_KEY`.
 2. After the first deploy, add the custom domain under **Settings → Custom
    Domains** and create the DNS record it gives you at your registrar.
 3. In Auth0, add `https://storagewatch.tech` to Allowed Callback URLs, Logout
@@ -142,8 +143,8 @@ Mac Agent (collector) → FastAPI Backend → Tiger Data
 
 ## API
 
-Every API endpoint except `/health` is authenticated. `agent` means the `AGENT_TOKEN`
-shared secret; `user` means an Auth0 access token. (In a production build the backend
+Every API endpoint except `/health` is authenticated. `agent` means an agent token
+minted from Settings; `user` means an Auth0 access token. (In a production build the backend
 also serves the dashboard's static files on unmatched paths — see above.)
 
 | Method | Path | Auth | Purpose |
@@ -157,7 +158,11 @@ also serves the dashboard's static files on unmatched paths — see above.)
 | POST | `/api/alerts/report` | agent | Agent-side alert submission |
 | POST | `/api/system-info` | agent | Store physical disk / APFS container inventory |
 | GET | `/api/system-info` | user | Read that inventory |
+| GET | `/api/hosts` | user | The caller's reporting machines, most recent first |
+| GET | `/api/agent-tokens` | user | Metadata for the caller's agent tokens |
+| POST | `/api/agent-tokens` | user | Mint an agent token (plaintext returned once) |
 | POST | `/api/ai/chat` | user | Conversational analysis, grounded in live telemetry |
+| POST | `/api/ai/explain` | user | Explain one alert (`{"alert_id": N}`) with Backboard; stored on the alert |
 
 ## Data model
 
@@ -178,15 +183,20 @@ counters. The same reading is therefore attached to every volume in a sample.
 |---|---|
 | `used_percent >= 90` | critical |
 | `used_percent >= 80` | warning |
-| Write throughput > 4× the trailing 20-sample average | warning |
+| Write throughput > 4× the average of the previous 20 samples | warning |
 
-The write baseline needs at least 5 samples before it will fire, so a freshly started
-collector stays quiet for the first ~25 seconds.
+The write baseline is kept per machine and needs 5 prior samples before it will fire,
+so a freshly started collector stays quiet for the first ~30 seconds. A condition that
+persists raises one alert per machine, type and severity every 10 minutes, not one per
+sample — otherwise a disk sitting at 85% would add a row and an LLM call every 5 seconds.
 
 ## Dashboard
 
-Six pages, all behind Auth0 login: **Dashboard** (overview), **Volumes**, **Disks**,
-**APFS**, **Performance**, **Alerts**.
+Everything the PRD's single-page dashboard (§21) calls for is on **Dashboard**: system
+status and host, storage / read / write cards, the I/O graph, and alerts beside an AI
+Analysis panel with **Explain with AI**. **Volumes**, **Disks**, **APFS**,
+**Performance**, **Alerts** and **Settings** are optional drill-downs. Each page fetches
+only its own data, and polling pauses while the tab is in the background.
 
 ## Demo
 
@@ -197,8 +207,8 @@ mkfile 2g ~/storagewatch-demo   # write burst → spike on the Performance chart
 rm ~/storagewatch-demo          # capacity recovers
 ```
 
-Expect the write-activity alert within ~10 seconds. Ask the AI panel about the spike to
-see it cite the live numbers.
+Expect the write-activity alert within ~10 seconds. Select it and click **Explain with
+AI** to see Backboard analyze it against the live numbers.
 
 ## Troubleshooting
 
@@ -216,8 +226,8 @@ Python 3.9. Use 3.10+.
 only exposes `VITE_`-prefixed names, and prefers `.env.local` over `.env` if both
 exist. Restart the dev server after editing; values are inlined at startup.
 
-**Collector logs 401** — `AGENT_TOKEN` differs between `.env` and the running backend,
-or the backend was started before the value was set.
+**Collector logs 401** — `AGENT_TOKEN` in `.env` must be one minted under Settings; a
+self-generated value is rejected. Restart the collector after changing it.
 
 ## Project Structure
 

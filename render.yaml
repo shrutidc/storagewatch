@@ -15,10 +15,6 @@ services:
         sync: false
       - key: BACKBOARD_API_KEY
         sync: false
-      # Shared secret the collector presents. Must match AGENT_TOKEN in the
-      # .env on the monitored Mac.
-      - key: AGENT_TOKEN
-        sync: false
       - key: AUTH0_DOMAIN
         value: dev-q6slqq3gylewwmzs.us.auth0.com
       # Must match VITE_AUTH0_AUDIENCE baked into the frontend build.

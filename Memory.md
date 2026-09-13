@@ -47,7 +47,7 @@ Two consequences worth internalising:
 |---|---|---|
 | `collector/` | On the monitored Mac | Samples volumes, disks, APFS state; POSTs to the backend |
 | `backend/` | Anywhere reachable | Ingests, stores, detects anomalies, serves the API and AI, serves the built dashboard in production |
-| `frontend/` | Browser | Six-page React dashboard, Auth0 login, Recharts, AI chat |
+| `frontend/` | Browser | Single-page React dashboard plus drill-down pages, Auth0 login, Recharts, AI chat |
 
 The collector must stay on the machine being monitored — it shells out to `diskutil`,
 `fdesetup` and `tmutil`. The backend can live elsewhere; `BACKEND_URL` points the agent
@@ -65,11 +65,11 @@ collector does not.
 | Caller | Credential | Enforced by |
 |---|---|---|
 | Dashboard | Auth0 access token, verified against tenant JWKS (audience + issuer checked) | `require_user` |
-| Collector | `AGENT_TOKEN` shared secret | `require_agent` |
+| Collector | Per-user agent token (`AGENT_TOKEN`), minted from Settings, stored hashed | `require_agent` |
 
 The roles are **disjoint, not hierarchical**: the agent token is rejected on dashboard
 reads, and a user token is rejected on ingest. The backend aborts startup if
-`AUTH0_DOMAIN`, `AUTH0_AUDIENCE` or `AGENT_TOKEN` is missing, rather than quietly
+`AUTH0_DOMAIN` or `AUTH0_AUDIENCE` is missing, rather than quietly
 serving telemetry unprotected.
 
 ## External services
@@ -89,7 +89,7 @@ Three tables, created automatically from `backend/schema.sql`:
 
 - **`filesystem_metrics`** — hypertable on `time`. One row per volume per sample.
 - **`alerts`** — `alert_type`, `severity`, `message`, `metric_value`, `resolved`, plus
-  an AI explanation attached asynchronously after insert.
+  the AI explanation stored when an administrator clicks **Explain with AI**.
 - **`system_info`** — single upserted JSONB row: physical disks, APFS containers,
   FileVault state, snapshot count. In the database rather than in memory so a backend
   restart doesn't blank the Disks and APFS pages.
@@ -100,21 +100,23 @@ Three tables, created automatically from `backend/schema.sql`:
 |---|---|
 | `used_percent >= 90` | critical |
 | `used_percent >= 80` | warning |
-| Write throughput > 4× trailing 20-sample average | warning |
+| Write throughput > 4× mean of the previous 20 samples | warning |
 
-The write baseline is an in-process `deque(maxlen=20)` and needs 5 samples before it
-fires — a freshly started backend stays quiet for ~25 seconds. Being in-process, it
-also **resets on restart** and is shared across hosts.
+The write baseline is an in-process `deque(maxlen=20)` per machine and needs 5 prior
+samples before it fires — a freshly started backend stays quiet for ~30 seconds. Being
+in-process, it also **resets on restart**. A persisting condition raises at most one
+alert per machine, type and severity every 10 minutes.
 
 ## Known limits
 
-- The write baseline is per-process, not per-host, and does not survive a restart.
+- The write baseline lives in the backend process and does not survive a restart.
 - Only the boot volume and `/Volumes/*` are monitored. macOS-internal container slices
   (VM, Preboot, Update) and containers under 10 GB are deliberately excluded as
   meaningless to an operator.
 - SMART status comes from `diskutil`; no `smartctl`, so no detailed attributes.
 - Alerts are never auto-resolved — `resolved` exists but nothing sets it.
-- The dashboard polls every 5 seconds. There is no push/websocket path.
+- The dashboard polls every 5 seconds, only for the open page's data, and pauses in a
+  background tab. There is no push/websocket path.
 - Render's free tier sleeps after ~15 minutes idle; a running collector keeps it awake.
 
 ## Provenance

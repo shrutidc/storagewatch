@@ -19,7 +19,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 # The agent has no user to sign in as, so it authenticates to the backend with
-# a shared secret instead of an Auth0 token.
+# an agent token minted from the dashboard's Settings page instead of an Auth0 token.
 AGENT_TOKEN = os.getenv("AGENT_TOKEN")
 AUTH_HEADERS = {"Authorization": f"Bearer {AGENT_TOKEN}"}
 
@@ -278,7 +278,7 @@ def send_system_info():
     }
     try:
         requests.post(f"{BACKEND_URL}/api/system-info", json=system_info,
-                      headers=AUTH_HEADERS, timeout=10)
+                      headers=AUTH_HEADERS, timeout=10).raise_for_status()
         print(f"✓ System info sent: {len(system_info['physical_disks'])} disk(s), FileVault {'on' if system_info['filevault_enabled'] else 'off'}")
     except Exception as e:
         print(f"✗ Error sending system info: {e}")
@@ -292,7 +292,7 @@ def report_alert(alert_type, severity, message):
             "alert_type": alert_type,
             "severity": severity,
             "message": message,
-        }, timeout=10)
+        }, timeout=10).raise_for_status()
         print(f"⚠ Alert reported: {alert_type} - {message}")
     except Exception as e:
         print(f"✗ Error reporting alert: {e}")
@@ -325,9 +325,10 @@ def send_metrics(metrics):
             headers=AUTH_HEADERS,
             timeout=5
         )
-        if response.status_code == 200:
-            print(f"✓ Metrics sent: {metrics['used_percent']:.1f}% used, R:{metrics['read_bytes_per_sec']/1e6:.0f}MB/s W:{metrics['write_bytes_per_sec']/1e6:.0f}MB/s")
-            return True
+        # A rejected token or payload would otherwise fail silently every cycle.
+        response.raise_for_status()
+        print(f"✓ Metrics sent: {metrics['used_percent']:.1f}% used, R:{metrics['read_bytes_per_sec']/1e6:.0f}MB/s W:{metrics['write_bytes_per_sec']/1e6:.0f}MB/s")
+        return True
     except Exception as e:
         print(f"✗ Error sending metrics: {e}")
     return False
@@ -337,6 +338,8 @@ def main():
     print(f"Starting StorageWatch collector...")
     print(f"Backend: {BACKEND_URL}")
     print(f"Sampling every 5 seconds...\n")
+    if not AGENT_TOKEN:
+        print("⚠ AGENT_TOKEN is not set — generate one under Settings in the dashboard.\n")
 
     cycle = 0
     while True:
