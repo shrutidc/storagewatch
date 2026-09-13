@@ -218,7 +218,17 @@ function App() {
                 </select>
               )}
               <span className="system-host">{metrics.hostname}</span>
-              <span className="system-status" style={{ backgroundColor: getStatusColor() }}>
+              <span className="system-sep">:</span>
+              {/* The glow is mixed from the same colour the pill is filled
+                  with, so it follows the state rather than being a fixed
+                  green that would contradict a warning. */}
+              <span
+                className="system-status"
+                style={{
+                  backgroundColor: getStatusColor(),
+                  boxShadow: `0 0 18px ${getStatusColor()}70, 0 0 6px ${getStatusColor()}90`,
+                }}
+              >
                 System {getSystemStatus()}
               </span>
             </div>
