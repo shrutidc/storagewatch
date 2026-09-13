@@ -17,6 +17,10 @@ from database import (init_db, insert_metrics, get_latest_metrics, get_metrics_h
 from alerts import detect_anomalies
 from auth import require_user, require_agent, check_config
 
+# Handlers are plain `def`, not `async def`: they make blocking database and
+# LLM calls, and FastAPI runs a sync handler in a worker thread. Inside
+# `async def` those calls ran on the event loop, so every request queued
+# behind whichever one was waiting on the database.
 app = FastAPI()
 
 app.add_middleware(
@@ -37,11 +41,11 @@ def startup():
         print(f"Warning: Database initialization failed: {e}")
 
 @app.get("/health")
-async def health_check():
+def health_check():
     return {"status": "ok"}
 
 @app.post("/api/metrics")
-async def post_metrics(metrics: Metrics, owner_sub: str = Depends(require_agent)):
+def post_metrics(metrics: Metrics, owner_sub: str = Depends(require_agent)):
     """Receive telemetry from monitoring agent."""
     try:
         insert_metrics(owner_sub, metrics)
@@ -67,7 +71,7 @@ async def post_metrics(metrics: Metrics, owner_sub: str = Depends(require_agent)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/metrics/current")
-async def get_current_metrics(filesystem: str = "/", hostname: str | None = None,
+def get_current_metrics(filesystem: str = "/", hostname: str | None = None,
                               user: dict = Depends(require_user)):
     """Most recent sample for a volume on one of the caller's machines."""
     try:
@@ -79,7 +83,7 @@ async def get_current_metrics(filesystem: str = "/", hostname: str | None = None
     return dict(result)
 
 @app.get("/api/metrics/history")
-async def get_metrics_history_endpoint(limit: int = 100, filesystem: str = "/",
+def get_metrics_history_endpoint(limit: int = 100, filesystem: str = "/",
                                        hostname: str | None = None,
                                        user: dict = Depends(require_user)):
     """Historical samples for a volume on one of the caller's machines."""
@@ -90,7 +94,7 @@ async def get_metrics_history_endpoint(limit: int = 100, filesystem: str = "/",
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/volumes")
-async def get_volumes(hostname: str | None = None,
+def get_volumes(hostname: str | None = None,
                       user: dict = Depends(require_user)):
     """Latest sample per volume on one of the caller's machines."""
     try:
@@ -100,7 +104,7 @@ async def get_volumes(hostname: str | None = None,
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/alerts")
-async def get_alerts(hostname: str | None = None,
+def get_alerts(hostname: str | None = None,
                      user: dict = Depends(require_user)):
     """Unresolved alerts for the caller's machines."""
     try:
@@ -110,7 +114,7 @@ async def get_alerts(hostname: str | None = None,
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/system-info")
-async def post_system_info(data: dict, owner_sub: str = Depends(require_agent)):
+def post_system_info(data: dict, owner_sub: str = Depends(require_agent)):
     """Receive disk/APFS system info from the collector (runs on the Mac, not here)."""
     try:
         save_system_info(owner_sub, data.get("hostname", "unknown"), data)
@@ -119,7 +123,7 @@ async def post_system_info(data: dict, owner_sub: str = Depends(require_agent)):
     return {"status": "ok"}
 
 @app.get("/api/system-info")
-async def get_system_info_endpoint(hostname: str | None = None,
+def get_system_info_endpoint(hostname: str | None = None,
                                    user: dict = Depends(require_user)):
     """Disk/APFS inventory for one of the caller's machines."""
     try:
@@ -131,7 +135,7 @@ async def get_system_info_endpoint(hostname: str | None = None,
     return info
 
 @app.get("/api/hosts")
-async def get_hosts_endpoint(user: dict = Depends(require_user)):
+def get_hosts_endpoint(user: dict = Depends(require_user)):
     """Machines reporting for the signed-in user, most recently seen first."""
     try:
         return [
@@ -142,7 +146,7 @@ async def get_hosts_endpoint(user: dict = Depends(require_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/agent-tokens")
-async def list_agent_tokens_endpoint(user: dict = Depends(require_user)):
+def list_agent_tokens_endpoint(user: dict = Depends(require_user)):
     """Metadata for the caller's agent tokens. Never returns the tokens."""
     try:
         return [
@@ -157,7 +161,7 @@ async def list_agent_tokens_endpoint(user: dict = Depends(require_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/agent-tokens")
-async def create_agent_token_endpoint(data: dict = None,
+def create_agent_token_endpoint(data: dict = None,
                                       user: dict = Depends(require_user)):
     """Mint an agent token for the caller's collector.
 
@@ -172,7 +176,7 @@ async def create_agent_token_endpoint(data: dict = None,
     return {"token": token, "label": label}
 
 @app.post("/api/alerts/report")
-async def report_alert(data: dict, owner_sub: str = Depends(require_agent)):
+def report_alert(data: dict, owner_sub: str = Depends(require_agent)):
     """Receive an ad-hoc alert from the collector (e.g. disk health, volume disappeared)
     that isn't tied to a specific metrics sample."""
     hostname = data.get("hostname", "Unknown")
@@ -197,20 +201,34 @@ async def report_alert(data: dict, owner_sub: str = Depends(require_agent)):
 # Tried in order: an individual Gemini model can be congested (503 "high
 # demand") or retired by Google (404 NOT_FOUND) while its siblings answer
 # fine, so pinning exactly one model makes the assistant fail for reasons
-# that have nothing to do with this app. Refresh the list from
+# that have nothing to do with this app. The free tier's quota is also per
+# model, so a longer list is more requests per day. Refresh the list from
 # GET https://app.backboard.io/api/models?provider=google
 LLM_PROVIDER = "google"
-LLM_MODELS = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
+LLM_MODELS = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash",
+              "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
+              "gemini-2.5-flash", "gemini-2.5-flash-lite"]
 
 
 # Gemini regularly returns 503 "high demand" for a single call and then succeeds
 # moments later, so a one-shot request fails intermittently for no real reason.
-TRANSIENT_MARKERS = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED",
-                     "high demand", "overloaded", "try again")
+TRANSIENT_MARKERS = ("503", "UNAVAILABLE", "high demand", "overloaded", "try again")
+
+# A 429 is a quota, not congestion: the free tier allows 20 requests per model
+# per day. Retrying that model is pointless, but its siblings have their own
+# quotas, so it is skipped for a while and they answer instead — without every
+# request first walking through the exhausted models.
+QUOTA_MARKERS = ("429", "RESOURCE_EXHAUSTED", "quota")
+QUOTA_BACKOFF_SECONDS = 600
+_quota_blocked_until: dict[str, float] = {}
 
 
 def _is_transient(reason: str) -> bool:
     return any(m.lower() in reason.lower() for m in TRANSIENT_MARKERS)
+
+
+def _is_quota(reason: str) -> bool:
+    return any(m.lower() in reason.lower() for m in QUOTA_MARKERS)
 
 
 def call_backboard(content: str, thread_id: str | None, mock_reply: str,
@@ -239,6 +257,8 @@ def call_backboard(content: str, thread_id: str | None, mock_reply: str,
     reason = "unknown error"
     for attempt in range(attempts):
         for model in LLM_MODELS:
+            if _quota_blocked_until.get(model, 0) > time.time():
+                continue
             try:
                 response = requests.post(
                     "https://app.backboard.io/api/threads/messages",
@@ -260,12 +280,19 @@ def call_backboard(content: str, thread_id: str | None, mock_reply: str,
                 else:
                     reason = f"HTTP {response.status_code}: {response.text[:200]}"
 
-            print(f"[backboard] {model} failed: {reason}")
+            print(f"[backboard] {model} failed: {reason[:300]}")
+            if _is_quota(reason):
+                _quota_blocked_until[model] = time.time() + QUOTA_BACKOFF_SECONDS
+                continue
             # A non-transient failure (e.g. billing) will hit every model
             # identically, so stop rather than hammering the whole list.
             if not _is_transient(reason) and "NOT_FOUND" not in reason:
                 return f"AI unavailable: {reason}", thread_id
 
+        if all(_quota_blocked_until.get(m, 0) > time.time() for m in LLM_MODELS):
+            return ("AI unavailable: the Gemini key has used its free-tier quota on every "
+                    "model (20 requests per model per day). It resets daily; enabling "
+                    "billing on the key's Google project lifts the limit."), thread_id
         if attempt < attempts - 1:
             time.sleep(2)
 
@@ -354,9 +381,6 @@ def build_live_context(owner_sub: str, hostname: str | None = None) -> str:
     return "\n".join(lines)
 
 
-# Both AI endpoints are plain `def`: the LLM call blocks for seconds, and FastAPI
-# runs sync handlers in a worker thread instead of on the event loop, so metrics
-# ingestion keeps flowing while the model answers.
 @app.post("/api/ai/chat")
 def ai_chat(data: dict, user: dict = Depends(require_user)):
     """Conversational follow-up chat with the AI, using Backboard thread continuity."""
@@ -428,7 +452,7 @@ if FRONTEND_DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
     @app.get("/{full_path:path}")
-    async def serve_dashboard(full_path: str):
+    def serve_dashboard(full_path: str):
         """Hand every non-API path to the SPA so client-side routes work on reload."""
         # Without this an unknown /api/... path would render the dashboard HTML
         # instead of returning a 404, which is confusing to debug against.

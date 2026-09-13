@@ -6,31 +6,75 @@ every read and write rather than an optional filter, so an unscoped query that
 would leak one user's machines to another can't be written by accident.
 """
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
 import hashlib
 import json
 import os
 import secrets
-from datetime import datetime
+import threading
+from contextlib import contextmanager
 
-def get_connection():
-    """Get a connection to Tiger Data."""
-    return psycopg2.connect(os.getenv("TIGER_DATABASE_URL"))
+from psycopg2.extras import RealDictCursor
+from psycopg2.pool import ThreadedConnectionPool
+
+# Opening a connection to Tiger Data costs 300-400 ms (TCP, TLS, auth) against
+# ~50 ms for the query itself, and every request used to open a fresh one.
+# Connections are now opened once and reused. min == max because psycopg2's
+# pool closes any returned connection beyond `minconn` instead of keeping it.
+# ponytail: fixed size; raise POOL_SIZE if requests start queueing.
+POOL_SIZE = 6
+_pool = None
+_pool_lock = threading.Lock()
+# The pool raises rather than waits when it is empty, so a burst queues here.
+_slots = threading.BoundedSemaphore(POOL_SIZE)
+
+def _get_pool():
+    # Created lazily: TIGER_DATABASE_URL is only set once load_dotenv() has run.
+    global _pool
+    with _pool_lock:
+        if _pool is None:
+            _pool = ThreadedConnectionPool(
+                POOL_SIZE, POOL_SIZE, os.getenv("TIGER_DATABASE_URL"),
+                # Stop idle connections being silently dropped in transit.
+                keepalives=1, keepalives_idle=30,
+            )
+    return _pool
+
+@contextmanager
+def connection():
+    """A pooled connection in autocommit mode. Every call here runs a single
+    statement, so a transaction would only add BEGIN and COMMIT round trips —
+    measured at ~150 ms per query instead of ~50."""
+    with _slots:
+        pool = _get_pool()
+        conn = pool.getconn()
+        conn.autocommit = True
+        try:
+            yield conn
+        finally:
+            # A connection the server dropped is discarded, not handed out again.
+            pool.putconn(conn, close=bool(conn.closed))
+
+def _all(sql, params=None):
+    """Every row, as dicts."""
+    with connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(sql, params)
+        return cur.fetchall()
+
+def _one(sql, params=None):
+    """The first row as a dict, or None."""
+    with connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(sql, params)
+        return cur.fetchone()
+
+def _execute(sql, params=None):
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(sql, params)
 
 def init_db():
     """Initialize database schema. Run once on startup."""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    # Read and execute schema.sql
     schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
     with open(schema_path, "r") as f:
-        cursor.execute(f.read())
-
-    conn.commit()
-    cursor.close()
-    conn.close()
+        _execute(f.read())
 
 
 # --- agent credentials -----------------------------------------------------
@@ -44,83 +88,47 @@ def create_agent_token(owner_sub, label=None):
     """Mint an agent token for a user. Returns the plaintext, which is the only
     time it exists outside the agent's config — only the hash is stored."""
     token = secrets.token_urlsafe(32)
-
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
+    _execute("""
         INSERT INTO agent_tokens (token_hash, owner_sub, label)
         VALUES (%s, %s, %s)
     """, (_hash_token(token), owner_sub, label))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
     return token
 
 def resolve_agent_token(token):
     """Return the owner of an agent token, or None if it isn't a valid one."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
+    row = _one("""
         UPDATE agent_tokens SET last_used_at = NOW()
         WHERE token_hash = %s
         RETURNING owner_sub
     """, (_hash_token(token),))
-    row = cursor.fetchone()
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-    return row[0] if row else None
+    return row["owner_sub"] if row else None
 
 def list_agent_tokens(owner_sub):
     """Metadata for a user's tokens. Never returns the tokens themselves."""
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("""
+    return _all("""
         SELECT label, created_at, last_used_at FROM agent_tokens
         WHERE owner_sub = %s ORDER BY created_at DESC
     """, (owner_sub,))
-    results = cursor.fetchall()
-    cursor.close()
-    conn.close()
-
-    return results
 
 
 # --- machines --------------------------------------------------------------
 
 def get_hosts(owner_sub):
     """The machines this user has reporting, most recently seen first."""
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("""
+    return _all("""
         SELECT hostname, MAX(time) AS last_seen
         FROM filesystem_metrics
         WHERE owner_sub = %s
         GROUP BY hostname
         ORDER BY last_seen DESC
     """, (owner_sub,))
-    results = cursor.fetchall()
-    cursor.close()
-    conn.close()
-
-    return results
-
-def get_default_hostname(owner_sub):
-    """The user's most recently reporting machine, used when no host is named."""
-    hosts = get_hosts(owner_sub)
-    return hosts[0]["hostname"] if hosts else None
 
 
 # --- metrics ---------------------------------------------------------------
 
 def insert_metrics(owner_sub, metrics):
     """Insert filesystem metrics into database."""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
+    _execute("""
         INSERT INTO filesystem_metrics (
             owner_sub, time, hostname, filesystem, filesystem_type,
             total_bytes, used_bytes, free_bytes, used_percent,
@@ -140,52 +148,27 @@ def insert_metrics(owner_sub, metrics):
         metrics.write_bytes_per_sec
     ))
 
-    conn.commit()
-    cursor.close()
-    conn.close()
-
 def get_latest_metrics(owner_sub, filesystem="/", hostname=None):
     """Most recent sample for one volume on one of the user's machines."""
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-    cursor.execute("""
+    return _one("""
         SELECT * FROM filesystem_metrics
         WHERE owner_sub = %s AND filesystem = %s
           AND (%s::text IS NULL OR hostname = %s)
         ORDER BY time DESC LIMIT 1
     """, (owner_sub, filesystem, hostname, hostname))
 
-    result = cursor.fetchone()
-    cursor.close()
-    conn.close()
-
-    return result
-
 def get_metrics_history(owner_sub, limit=100, filesystem="/", hostname=None):
     """Historical samples for one volume on one of the user's machines."""
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-    cursor.execute("""
+    return _all("""
         SELECT * FROM filesystem_metrics
         WHERE owner_sub = %s AND filesystem = %s
           AND (%s::text IS NULL OR hostname = %s)
         ORDER BY time DESC LIMIT %s
     """, (owner_sub, filesystem, hostname, hostname, limit))
 
-    results = cursor.fetchall()
-    cursor.close()
-    conn.close()
-
-    return results
-
 def get_all_volumes_latest(owner_sub, hostname=None):
     """Latest sample per volume, for one of the user's machines."""
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-    cursor.execute("""
+    return _all("""
         SELECT DISTINCT ON (filesystem) *
         FROM filesystem_metrics
         WHERE owner_sub = %s
@@ -196,35 +179,19 @@ def get_all_volumes_latest(owner_sub, hostname=None):
         ORDER BY filesystem, time DESC
     """, (owner_sub, hostname, hostname))
 
-    results = cursor.fetchall()
-    cursor.close()
-    conn.close()
-
-    return results
-
 
 # --- alerts ----------------------------------------------------------------
 
 def insert_alert(owner_sub, hostname, alert_type, severity, message,
                  metric_value, ai_explanation=None):
     """Insert an alert record. Returns the new alert's id."""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
+    return _one("""
         INSERT INTO alerts (owner_sub, hostname, alert_type, severity, message,
                             metric_value, ai_explanation)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
         RETURNING id
     """, (owner_sub, hostname, alert_type, severity, message, metric_value,
-          ai_explanation))
-
-    alert_id = cursor.fetchone()[0]
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-    return alert_id
+          ai_explanation))["id"]
 
 def has_recent_alert(owner_sub, hostname, alert_type, severity):
     """Whether this machine raised this alert in the last 10 minutes.
@@ -233,98 +200,53 @@ def has_recent_alert(owner_sub, hostname, alert_type, severity):
     seconds — so without this each sample would add a row and an LLM call.
     Severity is part of the key so warning -> critical still fires.
     """
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
+    return _one("""
         SELECT 1 FROM alerts
         WHERE owner_sub = %s AND hostname = %s
           AND alert_type = %s AND severity = %s
           AND created_at > NOW() - INTERVAL '10 minutes'
         LIMIT 1
-    """, (owner_sub, hostname, alert_type, severity))
-    found = cursor.fetchone() is not None
-    cursor.close()
-    conn.close()
-
-    return found
+    """, (owner_sub, hostname, alert_type, severity)) is not None
 
 def get_alert(owner_sub, alert_id):
     """One of the user's alerts, or None — including when it is someone else's."""
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("""
+    return _one("""
         SELECT * FROM alerts WHERE owner_sub = %s AND id = %s
     """, (owner_sub, alert_id))
-    result = cursor.fetchone()
-    cursor.close()
-    conn.close()
-
-    return result
 
 def update_alert_explanation(owner_sub, alert_id, ai_explanation):
     """Attach an AI explanation to one of the user's alerts. Owner-scoped
     because the id comes from the browser."""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
+    _execute("""
         UPDATE alerts SET ai_explanation = %s WHERE id = %s AND owner_sub = %s
     """, (ai_explanation, alert_id, owner_sub))
 
-    conn.commit()
-    cursor.close()
-    conn.close()
-
 def get_recent_alerts(owner_sub, limit=10, hostname=None):
     """Unresolved alerts for the user's machines, newest first."""
-    conn = get_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-    cursor.execute("""
+    return _all("""
         SELECT * FROM alerts
         WHERE owner_sub = %s AND resolved = FALSE
           AND (%s::text IS NULL OR hostname = %s)
         ORDER BY created_at DESC LIMIT %s
     """, (owner_sub, hostname, hostname, limit))
 
-    results = cursor.fetchall()
-    cursor.close()
-    conn.close()
-
-    return results
-
 
 # --- disk / APFS inventory -------------------------------------------------
 
 def save_system_info(owner_sub, hostname, data):
     """Upsert one machine's disk/APFS snapshot."""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
+    _execute("""
         INSERT INTO system_info (owner_sub, hostname, updated_at, data)
         VALUES (%s, %s, NOW(), %s)
         ON CONFLICT (owner_sub, hostname)
         DO UPDATE SET updated_at = NOW(), data = EXCLUDED.data
     """, (owner_sub, hostname, json.dumps(data)))
 
-    conn.commit()
-    cursor.close()
-    conn.close()
-
 def get_system_info(owner_sub, hostname=None):
     """One machine's disk/APFS snapshot, or None if it hasn't reported."""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
+    row = _one("""
         SELECT data FROM system_info
         WHERE owner_sub = %s AND (%s::text IS NULL OR hostname = %s)
         ORDER BY updated_at DESC LIMIT 1
     """, (owner_sub, hostname, hostname))
-    row = cursor.fetchone()
-
-    cursor.close()
-    conn.close()
-
-    return row[0] if row else None
+    return row["data"] if row else None

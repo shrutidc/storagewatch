@@ -117,6 +117,8 @@ alert per machine, type and severity every 10 minutes.
 - Alerts are never auto-resolved — `resolved` exists but nothing sets it.
 - The dashboard polls every 5 seconds, only for the open page's data, and pauses in a
   background tab. There is no push/websocket path.
+- The AI runs on a Gemini free-tier key: 20 requests per model per day. Enable billing on
+  the key's Google project before relying on it.
 - Render's free tier sleeps after ~15 minutes idle; a running collector keeps it awake.
 
 ## Provenance

@@ -74,8 +74,9 @@ function Dashboard() {
               <YAxis label={{ value: 'MB/s', angle: -90, position: 'insideLeft' }} />
               <Tooltip />
               <Legend />
-              <Line type="monotone" dataKey="read" stroke="#8884d8" name="Read" dot={false} />
-              <Line type="monotone" dataKey="write" stroke="#82ca9d" name="Write" dot={false} />
+              {/* No animation: data refreshes every 5 s and would redraw each time. */}
+              <Line type="monotone" dataKey="read" stroke="#8884d8" name="Read" dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="write" stroke="#82ca9d" name="Write" dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         ) : (

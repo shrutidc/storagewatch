@@ -29,6 +29,8 @@ function App() {
   // null = follow whichever machine reported most recently
   const [selectedHost, setSelectedHost] = useState(null)
   const [authError, setAuthError] = useState(null)
+  // False until the first poll returns, so loading isn't mistaken for "no data".
+  const [fetched, setFetched] = useState(false)
 
   const [chatMessages, setChatMessages] = useState([])
   const [chatInput, setChatInput] = useState('')
@@ -110,8 +112,10 @@ function App() {
         // left-to-right.
         setHistory(hist.data.slice().reverse().map(m => ({
           time: new Date(m.time).toLocaleTimeString(),
-          read: (m.read_bytes_per_sec / 1e6).toFixed(1),
-          write: (m.write_bytes_per_sec / 1e6).toFixed(1),
+          // Numbers, not toFixed() strings: Recharts sizes the axis from these,
+          // and strings compare as text ("9.8" > "15.2"), clipping the line.
+          read: Math.round(m.read_bytes_per_sec / 1e5) / 10,
+          write: Math.round(m.write_bytes_per_sec / 1e5) / 10,
         })))
       }
 
@@ -133,6 +137,8 @@ function App() {
       setLastRefresh(new Date())
     } catch (err) {
       console.error('Failed to fetch metrics:', err)
+    } finally {
+      setFetched(true)
     }
   }
 
@@ -249,6 +255,8 @@ function App() {
             // Settings and Connect must render without metrics: a new user has
             // no data until their first collector connects.
             <Outlet context={{ metrics, history, alerts, volumes, systemInfo, lastRefresh, hosts, authConfig }} />
+          ) : !fetched ? (
+            <p className="no-data">Loading metrics…</p>
           ) : (
             <p className="no-data">
               No metrics yet. On the Mac to monitor, run <code>python collector/collector.py</code>{' '}

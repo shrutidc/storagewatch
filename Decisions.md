@@ -176,6 +176,29 @@ that scan the whole metrics history. Each page now requests only its own data, t
 machine list loads at sign-in and on Settings, `/api/volumes` scans only the last hour,
 and polling pauses while the tab is in the background.
 
+### Database connections are pooled; handlers are plain `def`
+
+Opening a connection to Tiger Data measured 300–400 ms against ~50 ms for the query, and
+every request opened at least one, so a dashboard poll spent most of its time on
+handshakes. And because the handlers were `async def` around blocking psycopg2 calls,
+each held the event loop, so dashboard reads queued behind the collector's writes.
+Connections are now pooled and reused, and handlers are `def`, which FastAPI runs in
+worker threads.
+
+### Chart values are numbers
+
+History was mapped with `toFixed(1)`, which returns strings. Recharts took the axis
+maximum as the lexically largest string — `"9.8"` beats `"15.2"` — so the axis topped
+out at 12 while the read line ran off the chart.
+
+### Gemini quota errors skip the model instead of retrying it
+
+A 429 from the free tier is a daily per-model quota (20 requests), not congestion. It
+was treated as transient, so every request retried every exhausted model and then
+reported "high demand". A model that returns a quota error is now skipped for ten
+minutes, the list covers more models (each has its own quota), and when all are
+exhausted the message says so.
+
 ---
 
 ## Storage and state
