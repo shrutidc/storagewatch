@@ -96,6 +96,40 @@ Swift (SwiftUI `MenuBarExtra`), built universal and ad-hoc signed; the installer
 downloads it with the collector rather than a browser, so it isn't quarantined and
 Gatekeeper doesn't block it. New alerts also raise macOS notifications from the collector.
 
+### The dashboard asks for the menu bar app; the collector installs it
+
+Putting an app on someone's Mac without asking is the installer's business to stop doing,
+but a web page cannot install or remove anything on a machine it merely receives
+telemetry from. So the Dashboard's **Menu bar app** switch writes a wish to
+`host_preferences`, and the reply to that machine's next report — the only channel back
+to it — carries the flag. The collector compares it against what is actually in
+`~/Applications` and acts only on a mismatch, so the steady state is one `is_dir()` call
+per cycle and nothing else.
+
+The collector reports back what it did, and only when it changes, so the dashboard can
+distinguish "applied" from "still applying" without a write on every five-second report.
+`collector.py --install` no longer installs the app directly for the same reason: one
+reconciling code path cannot put back an app the administrator switched off.
+
+Default on, because that is what every collector did before the switch existed — a
+default of off would have uninstalled the app from every machine already running one.
+
+### The dashboard shows what `diskutil` shows
+
+`diskutil apfs list -plist` carries no mount point and no seal state, so the APFS table
+could not answer "where is Preboot mounted?" — and the assistant, told to suggest macOS
+commands, sent people to a terminal to run the very command the page is built on. Each
+volume now costs one `diskutil info -plist` call (~80 ms, on a refresh that runs once a
+minute) for its mount point, seal, writability and volume group.
+
+A sealed system volume is mounted nowhere: macOS boots from a read-only snapshot of it,
+so the volume reports no mount point and the page would have said "not mounted" for the
+volume the machine is running on. One `diskutil info -plist /` finds that snapshot and it
+is matched to its volume by device prefix — `disk3s1s1` is a snapshot of `disk3s1`.
+
+The assistant's prompt now states that the dashboard already shows this and tells it to
+point at the section rather than at a command.
+
 ### Missing secrets abort startup
 
 Absent `AUTH0_DOMAIN` or `AUTH0_AUDIENCE`, the process exits. Failing

@@ -185,14 +185,67 @@ def get_physical_disks():
         })
     return disks
 
+def get_apfs_volume_detail(device):
+    """Where a volume is mounted, and whether it is sealed or read-only.
+
+    `diskutil apfs list -plist` carries none of this — it is why the answer to
+    "where is Preboot mounted?" used to be a trip to Terminal — so each volume
+    costs one more diskutil call. Measured at ~80 ms each, against a system
+    info refresh that runs once a minute.
+    """
+    try:
+        d = plistlib.loads(subprocess.run(
+            ["diskutil", "info", "-plist", device], capture_output=True).stdout)
+    except Exception as e:
+        print(f"Error reading APFS volume detail for {device}: {e}")
+        return {}
+    return {
+        # Empty for a volume that isn't mounted — including the sealed system
+        # volume, which is reached through its booted snapshot instead.
+        "mount_point": d.get("MountPoint") or "",
+        # A string "Yes"/"No" here, unlike every other flag diskutil returns.
+        "sealed": d.get("Sealed") == "Yes",
+        "writable": bool(d.get("WritableVolume", False)),
+        "bootable": bool(d.get("Bootable", False)),
+        # Shared by the System and Data volumes that make up one macOS install.
+        "volume_group": d.get("APFSVolumeGroupID", ""),
+    }
+
+def get_booted_snapshot():
+    """The read-only snapshot macOS is running from, if it is booted that way.
+
+    On a sealed system volume `/` is not the volume itself but a snapshot of
+    it, which is why the System volume shows no mount point of its own. The
+    dashboard would otherwise just say "not mounted" for the volume the
+    machine is running on.
+    """
+    try:
+        d = plistlib.loads(subprocess.run(
+            ["diskutil", "info", "-plist", "/"], capture_output=True).stdout)
+    except Exception:
+        return None
+    if not d.get("APFSSnapshot"):
+        return None
+    return {
+        "device_identifier": d.get("DeviceIdentifier", ""),
+        "name": d.get("APFSSnapshotName", ""),
+        "uuid": d.get("APFSSnapshotUUID", ""),
+        "mount_point": d.get("MountPoint") or "/",
+    }
+
 def get_apfs_containers():
-    """Real APFS container/volume info: capacity, roles, FileVault, encryption."""
+    """Real APFS container/volume info: capacity, roles, FileVault, encryption,
+    and where each volume is actually mounted."""
     try:
         out = subprocess.run(["diskutil", "apfs", "list", "-plist"], capture_output=True).stdout
         data = plistlib.loads(out)
     except Exception as e:
         print(f"Error listing APFS containers: {e}")
         return []
+
+    # One call for the whole machine rather than one per volume: only the
+    # booted volume can have it, and it is found by device prefix below.
+    snapshot = get_booted_snapshot()
 
     containers = []
     for c in data.get("Containers", []):
@@ -202,23 +255,35 @@ def get_apfs_containers():
         if c.get("CapacityCeiling", 0) < 10_000_000_000:
             continue
 
-        volumes = [{
-            "name": v.get("Name", "Unknown"),
-            "device_identifier": v.get("DeviceIdentifier", ""),
-            "uuid": v.get("APFSVolumeUUID", ""),
-            "roles": v.get("Roles", []),
-            "filevault": bool(v.get("FileVault")),
-            "encrypted": bool(v.get("Encryption")),
-            "locked": bool(v.get("Locked")),
-            "capacity_in_use": v.get("CapacityInUse", 0),
-            "capacity_quota": v.get("CapacityQuota", 0),
-            "capacity_reserve": v.get("CapacityReserve", 0),
-        } for v in c.get("Volumes", [])]
+        volumes = []
+        for v in c.get("Volumes", []):
+            device = v.get("DeviceIdentifier", "")
+            volume = {
+                "name": v.get("Name", "Unknown"),
+                "device_identifier": device,
+                "uuid": v.get("APFSVolumeUUID", ""),
+                "roles": v.get("Roles", []),
+                "filevault": bool(v.get("FileVault")),
+                "encrypted": bool(v.get("Encryption")),
+                "locked": bool(v.get("Locked")),
+                "capacity_in_use": v.get("CapacityInUse", 0),
+                "capacity_quota": v.get("CapacityQuota", 0),
+                "capacity_reserve": v.get("CapacityReserve", 0),
+                **get_apfs_volume_detail(device),
+            }
+            # "disk3s1s1" is a snapshot of "disk3s1": the machine boots from it
+            # while the volume underneath stays unmounted.
+            if snapshot and device and snapshot["device_identifier"].startswith(device):
+                volume["snapshot"] = snapshot
+            volumes.append(volume)
 
+        store = (c.get("PhysicalStores") or [{}])[0]
         containers.append({
             "container_reference": c.get("ContainerReference", "Unknown"),
             "uuid": c.get("APFSContainerUUID", ""),
             "physical_store": c.get("DesignatedPhysicalStore", ""),
+            "physical_store_uuid": store.get("DiskUUID", ""),
+            "physical_store_size": store.get("Size", 0),
             "capacity_ceiling": c.get("CapacityCeiling", 0),
             "capacity_free": c.get("CapacityFree", 0),
             "volumes": volumes,
@@ -471,6 +536,12 @@ def main():
     cycle = 0
     system_info = {}
     alerts = []
+    # What the backend has been told about the menu bar app here. None until
+    # the first report, so a restarted collector states the truth once and then
+    # stays quiet — the dashboard needs this to distinguish "applied" from
+    # "still applying", and reporting it every cycle would be a write per Mac
+    # per five seconds for a value that almost never changes.
+    reported_menu_bar = None
     while True:
         try:
             volumes = get_monitored_volumes()
@@ -478,10 +549,17 @@ def main():
 
             samples = collect_metrics()
             for metrics in samples:
+                if metrics["filesystem"] == "/" and menu_bar_installed() != reported_menu_bar:
+                    metrics["menu_bar_installed"] = menu_bar_installed()
                 reply = send_metrics(metrics)
                 if reply and "active_alerts" in reply:
+                    if "menu_bar_installed" in metrics:
+                        reported_menu_bar = metrics["menu_bar_installed"]
                     alerts = reply["active_alerts"]
                     notify_new_alerts(alerts)
+                    # Older backends don't send this; they get the behaviour
+                    # they always had, which is the app left in place.
+                    apply_menu_bar(reply.get("menu_bar", True))
 
             # Disk/APFS info changes rarely — refresh every ~60s, not every cycle
             if cycle % 12 == 0:
@@ -534,10 +612,55 @@ def install():
     print("✓ StorageWatch now runs in the background whenever you're logged in to this Mac.")
     print(f"  Log:    {log}")
     print(f"  Remove: {sys.executable} {script} --uninstall")
-    install_menu_bar()
+    # Not installed here: the collector that just started reconciles the menu
+    # bar app against the dashboard's setting within a few seconds. Doing it
+    # here as well would put the app back on a Mac where the administrator had
+    # switched it off, only to remove it again moments later.
+    print("  The menu bar app follows the Menu bar app switch on your dashboard.")
 
 MENU_BAR_APP = Path.home() / "Applications" / "StorageWatch.app"
 MENU_BAR_AGENT = Path.home() / "Library" / "LaunchAgents" / "tech.storagewatch.menubar.plist"
+
+def menu_bar_installed():
+    """Whether the menu bar app is on this Mac — the ground truth the dashboard
+    is shown, rather than whatever was last asked for."""
+    return MENU_BAR_APP.is_dir()
+
+# A download that fails — no network, an older backend — must not be retried on
+# every five-second cycle.
+_menu_bar_retry_after = 0.0
+
+def apply_menu_bar(enabled):
+    """Make this Mac match the dashboard's Menu bar app switch.
+
+    The dashboard cannot reach this Mac, so the setting arrives with the reply
+    to a report and is applied here. A machine already in the wanted state does
+    no work, which is every cycle but the one right after somebody flips it.
+    """
+    global _menu_bar_retry_after
+    if enabled == menu_bar_installed():
+        return
+    if not enabled:
+        remove_menu_bar()
+    elif time.time() >= _menu_bar_retry_after:
+        # Held off first, so a download that fails — no network, a backend
+        # without the app — isn't retried on every five-second cycle. Cleared
+        # again on success, otherwise switching the app off and back on inside
+        # five minutes would quietly do nothing.
+        _menu_bar_retry_after = time.time() + 300
+        install_menu_bar()
+        if menu_bar_installed():
+            _menu_bar_retry_after = 0.0
+
+def remove_menu_bar():
+    """Take the menu bar app off this Mac. Monitoring is untouched: only the
+    at-a-glance display is switched off, and the dashboard still fills in."""
+    subprocess.run(["launchctl", "unload", str(MENU_BAR_AGENT)], capture_output=True)
+    MENU_BAR_AGENT.unlink(missing_ok=True)
+    subprocess.run(["pkill", "-x", "StorageWatch"], capture_output=True)
+    shutil.rmtree(MENU_BAR_APP, ignore_errors=True)
+    (INSTALL_DIR / "StorageWatch.zip").unlink(missing_ok=True)
+    print("✓ Menu bar app removed — switched off in the dashboard.")
 
 def install_menu_bar():
     """Put the StorageWatch menu bar app in ~/Applications and open it at login.

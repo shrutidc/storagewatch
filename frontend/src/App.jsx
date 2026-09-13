@@ -21,6 +21,7 @@ function App() {
   const [alerts, setAlerts] = useState([])
   const [volumes, setVolumes] = useState([])
   const [systemInfo, setSystemInfo] = useState(null)
+  const [preferences, setPreferences] = useState(null)
   const [lastRefresh, setLastRefresh] = useState(null)
   const [hosts, setHosts] = useState([])
   // null = follow whichever machine reported most recently
@@ -98,6 +99,7 @@ function App() {
       setAlerts(data.alerts)
       setVolumes(data.volumes)
       setSystemInfo(data.system_info)
+      setPreferences(data.preferences)
       // Already oldest-first, so time reads left-to-right.
       setHistory(data.history.map(m => ({
         time: new Date(m.time).toLocaleTimeString(),
@@ -223,8 +225,9 @@ function App() {
           ) : (metrics || onSettings || onConnect) ? (
             // Settings and Connect must render without metrics: a new user has
             // no data until their first collector connects.
-            <Outlet context={{ metrics, history, alerts, volumes, systemInfo, lastRefresh, hosts,
-                               authConfig, installCommand: INSTALL_COMMAND }} />
+            <Outlet context={{ metrics, history, alerts, volumes, systemInfo, preferences,
+                               lastRefresh, hosts, authConfig,
+                               installCommand: INSTALL_COMMAND }} />
           ) : !fetched ? (
             <p className="no-data">Loading metrics…</p>
           ) : (

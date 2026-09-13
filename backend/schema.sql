@@ -100,3 +100,19 @@ CREATE TABLE IF NOT EXISTS system_info (
     data JSONB NOT NULL,
     PRIMARY KEY (owner_sub, hostname)
 );
+
+-- Per-machine preferences, set in the dashboard and applied on the Mac.
+--
+-- A browser cannot reach the monitored Mac, so a choice made here is stored
+-- and the collector on that machine picks it up with its next report.
+-- `menu_bar_applied` is what that collector last confirmed is actually true,
+-- which is how the dashboard can say "applying" instead of claiming a change
+-- it has not seen take effect. A machine with no row takes the defaults.
+CREATE TABLE IF NOT EXISTS host_preferences (
+    owner_sub TEXT NOT NULL,
+    hostname TEXT NOT NULL,
+    menu_bar_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    menu_bar_applied BOOLEAN,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (owner_sub, hostname)
+);

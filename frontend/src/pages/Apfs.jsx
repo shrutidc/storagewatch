@@ -20,8 +20,9 @@ function Apfs() {
       <div className="detail-section">
         <h2>APFS Overview</h2>
         <p className="section-sub">
-          Reported by <code>diskutil apfs list</code> on {systemInfo.hostname} ·
-          {' '}macOS-internal containers (iSCPreboot, bare Recovery) are omitted
+          Reported by <code>diskutil apfs list</code> and <code>diskutil info</code> on
+          {' '}{systemInfo.hostname} · macOS-internal containers (iSCPreboot, bare
+          Recovery) are omitted
         </p>
         <div className="metrics-grid">
           <div className="metric-card">
@@ -46,6 +47,9 @@ function Apfs() {
       {containers.map(c => {
         const used = c.capacity_ceiling - c.capacity_free
         const usedPct = c.capacity_ceiling ? (used / c.capacity_ceiling) * 100 : 0
+        // On a sealed system volume the Mac runs from a snapshot, not from the
+        // volume, which is why that volume reports no mount point of its own.
+        const booted = c.volumes.find(v => v.snapshot)?.snapshot
         return (
           <div key={c.container_reference} className="detail-section">
             <h2>Container {c.container_reference}</h2>
@@ -63,8 +67,20 @@ function Apfs() {
                 <tr><td>Container reference</td><td>{c.container_reference}</td></tr>
                 <tr><td>Container UUID</td><td>{c.uuid || '—'}</td></tr>
                 <tr><td>Physical backing store</td><td>{c.physical_store || '—'}</td></tr>
+                <tr><td>Physical store UUID</td><td>{c.physical_store_uuid || '—'}</td></tr>
+                <tr><td>Physical store size</td><td>{c.physical_store_size ? gb(c.physical_store_size) : '—'}</td></tr>
                 <tr><td>Capacity (ceiling)</td><td>{gb(c.capacity_ceiling)}</td></tr>
-                <tr><td>Free space</td><td>{gb(c.capacity_free)}</td></tr>
+                <tr><td>Free space (not allocated)</td><td>{gb(c.capacity_free)}</td></tr>
+                {booted && (
+                  <>
+                    <tr>
+                      <td>Booted snapshot</td>
+                      <td><code>{booted.device_identifier}</code> mounted at <code>{booted.mount_point}</code></td>
+                    </tr>
+                    <tr><td>Snapshot UUID</td><td>{booted.uuid || '—'}</td></tr>
+                    <tr><td>Snapshot name</td><td className="wrap-anywhere">{booted.name || '—'}</td></tr>
+                  </>
+                )}
               </tbody>
             </table>
 
@@ -75,17 +91,31 @@ function Apfs() {
                   <tr>
                     <th>Name</th>
                     <th>Device</th>
+                    <th>Mount point</th>
                     <th>Roles</th>
                     <th>In use</th>
                     <th>Encryption</th>
                     <th>FileVault</th>
+                    <th>State</th>
                   </tr>
                 </thead>
                 <tbody>
                   {c.volumes.map(v => (
                     <tr key={v.device_identifier || v.name}>
                       <td>{v.name}</td>
-                      <td>{v.device_identifier || '—'}</td>
+                      <td><code>{v.device_identifier || '—'}</code></td>
+                      <td>
+                        {v.mount_point ? (
+                          <code>{v.mount_point}</code>
+                        ) : v.snapshot ? (
+                          <>
+                            <code>{v.snapshot.mount_point}</code>
+                            <span className="cell-note">via snapshot {v.snapshot.device_identifier}</span>
+                          </>
+                        ) : (
+                          <span className="cell-note">Not mounted</span>
+                        )}
+                      </td>
                       <td>{v.roles.length ? v.roles.join(', ') : '—'}</td>
                       <td>{gb(v.capacity_in_use)}</td>
                       <td>
@@ -97,6 +127,14 @@ function Apfs() {
                         <span className={`pill ${v.filevault ? 'good' : ''}`}>
                           {v.filevault ? 'Protected' : '—'}
                         </span>
+                      </td>
+                      <td className="pill-stack">
+                        {v.sealed && <span className="pill good">Sealed</span>}
+                        {v.locked && <span className="pill bad">Locked</span>}
+                        {/* Only meaningful for a mounted volume: diskutil
+                            reports an unmounted one as unwritable either way. */}
+                        {v.mount_point && !v.writable && <span className="pill">Read-only</span>}
+                        {!v.sealed && !v.locked && (!v.mount_point || v.writable) && '—'}
                       </td>
                     </tr>
                   ))}

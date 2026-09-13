@@ -74,6 +74,9 @@ main() loop, cycle N
   ├─ for each: send_metrics()       → POST /api/metrics  + agent token
   │                                    reply for "/" carries the host's open alerts
   │                                    → macOS notification for each new one
+  │                                    …and the dashboard's menu bar setting
+  │                                    → apply_menu_bar(): install or remove the
+  │                                      app only when this Mac doesn't match
   ├─ if N % 12 == 0  (~60s)
   │    ├─ send_system_info()        → POST /api/system-info: disks, APFS, FileVault
   │    └─ check_disk_health()       → SMART status via diskutil
@@ -90,6 +93,8 @@ POST /api/metrics
   ├─ Depends(require_agent)         → token hash → owner_sub, else 401
   ├─ Metrics (Pydantic)             → 422 on shape mismatch
   ├─ insert_metrics()               → INSERT into filesystem_metrics
+  ├─ menu_bar_installed sent?       → set_menu_bar_applied(); the collector sends
+  │                                    it only when it changes, so this is idle
   ├─ detect_anomalies()
   │    ├─ check_capacity_alert()    → >=90 critical, >=80 warning
   │    └─ check_io_anomaly()        → per-machine deque(maxlen=20); needs >=5 prior
@@ -97,6 +102,9 @@ POST /api/metrics
   └─ for each anomaly
        ├─ has_recent_alert()        → skip if same type+severity in last 10 min
        └─ insert_alert()            → no LLM call; the AI answers only when asked (section 5)
+
+reply (filesystem "/" only)
+  └─ get_agent_state()              → one query: open alerts + menu_bar flag
 ```
 
 ## 4. Dashboard load and poll

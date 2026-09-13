@@ -170,6 +170,7 @@ also serves the dashboard's static files on unmatched paths — see above.)
 | GET | `/api/system-info` | user | Read that inventory |
 | GET | `/api/dashboard` | user | Everything the dashboard shows, in one response built by one SQL query |
 | GET | `/api/hosts` | user | The caller's reporting machines, most recent first |
+| PUT | `/api/preferences` | user | Set a per-machine preference (menu bar app on/off); the collector applies it |
 | GET | `/api/agent-tokens` | user | Metadata for the caller's agent tokens |
 | POST | `/api/agent-tokens` | user | Mint an agent token; called by the Connect page (plaintext returned once) |
 | POST | `/api/ai/chat` | user | Conversational analysis, grounded in live telemetry |
@@ -179,13 +180,17 @@ also serves the dashboard's static files on unmatched paths — see above.)
 
 ## Data model
 
-Three tables, created automatically from `backend/schema.sql`:
+Created automatically from `backend/schema.sql`:
 
 - **`filesystem_metrics`** — a TimescaleDB hypertable on `time`. One row per volume per
   sample: `hostname`, `filesystem`, `filesystem_type`, `total_bytes`, `used_bytes`,
   `free_bytes`, `used_percent`, `read_bytes_per_sec`, `write_bytes_per_sec`.
 - **`alerts`** — `alert_type`, `severity`, `message`, `metric_value`, `resolved`.
-- **`system_info`** — JSONB snapshot of disks, APFS containers and FileVault state.
+- **`system_info`** — JSONB snapshot of disks, APFS containers (with each volume's
+  mount point, seal state and booted snapshot) and FileVault state.
+- **`host_preferences`** — one row per machine: what the administrator chose in the
+  dashboard (`menu_bar_enabled`) and what the collector on that machine last confirmed
+  is true (`menu_bar_applied`). A machine with no row takes the defaults.
 
 Throughput is measured at the physical disk, since macOS exposes no per-volume I/O
 counters. The same reading is therefore attached to every volume in a sample.
@@ -211,9 +216,26 @@ disks and APFS containers. Questions about any of it go to the **Ask AI** chat.
 **Settings** lists connected Macs and the install command. Polling pauses while the tab
 is in the background.
 
+The APFS section carries what `diskutil apfs list` prints, so nobody has to open a
+terminal to read it: per volume the device identifier, **mount point**, roles, capacity,
+encryption, FileVault and whether it is sealed, locked or read-only; per container the
+UUID, the physical store with its own UUID and size, and the capacity split. A sealed
+system volume reports no mount point of its own — the Mac runs from a read-only snapshot
+of it — so the snapshot's device, UUID and mount point are shown too. The assistant is
+told the dashboard already shows all of this, and to answer from it rather than
+suggesting a command to look it up. (The one thing `diskutil` prints that isn't here is
+volume case-sensitivity, which it exposes in no plist.)
+
 ## Menu bar app
 
-The installer also puts **StorageWatch** in the macOS menu bar and opens it at login.
+**StorageWatch** can also sit in the macOS menu bar and open at login. It is on by
+default; the **Menu bar app** switch at the bottom of the Dashboard turns it off or back
+on per machine. A browser cannot reach the monitored Mac, so the choice is stored against
+that machine and the collector there applies it with its next report — a few seconds —
+installing or removing the app itself. Until that collector confirms what it did, the
+Dashboard says the change is still being applied rather than claiming it took effect.
+Switching it off leaves monitoring untouched: only the icon goes.
+
 The bar shows boot-volume usage (⚠ when an alert is open or the collector stops); a
 click shows every volume, read/write throughput, disk SMART status, FileVault, local
 snapshots and open alerts, plus **Open Dashboard**. New alerts also arrive as macOS

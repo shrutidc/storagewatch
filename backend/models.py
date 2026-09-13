@@ -19,6 +19,12 @@ class Metrics(BaseModel):
     read_bytes_per_sec: int
     write_bytes_per_sec: int
 
+    # Whether the menu bar app is on that Mac right now. The collector sends it
+    # only when it changes — a collector starting up, or one that has just
+    # applied the dashboard's setting — so a steady report carries nothing
+    # extra and costs no extra write.
+    menu_bar_installed: bool | None = None
+
 
 class MetricsResponse(BaseModel):
     """Response from GET endpoints."""

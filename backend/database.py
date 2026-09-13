@@ -240,6 +240,60 @@ def get_system_info(owner_sub, hostname=None):
     return row["data"] if row else None
 
 
+# --- per-machine preferences -----------------------------------------------
+
+def set_menu_bar_enabled(owner_sub, hostname, enabled):
+    """Record whether this machine should show the menu bar app.
+
+    Only a wish: the Mac is not reachable from here, so the collector on it
+    applies this with its next report. `menu_bar_applied` is deliberately left
+    alone so the dashboard keeps showing the change as pending until that
+    collector confirms it.
+    """
+    _execute("""
+        INSERT INTO host_preferences (owner_sub, hostname, menu_bar_enabled)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (owner_sub, hostname)
+        DO UPDATE SET menu_bar_enabled = EXCLUDED.menu_bar_enabled, updated_at = NOW()
+    """, (owner_sub, hostname, enabled))
+
+def set_menu_bar_applied(owner_sub, hostname, installed):
+    """Record what the collector reports is actually on the machine.
+
+    Sent only when it changes, so this runs about once per collector start or
+    per toggle rather than on every five-second report.
+    """
+    _execute("""
+        INSERT INTO host_preferences (owner_sub, hostname, menu_bar_applied)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (owner_sub, hostname)
+        DO UPDATE SET menu_bar_applied = EXCLUDED.menu_bar_applied
+    """, (owner_sub, hostname, installed))
+
+
+# --- agent -----------------------------------------------------------------
+
+def get_agent_state(owner_sub, hostname):
+    """Everything the collector needs back from a report, as one JSON document.
+
+    The alerts it shows on the Mac and the preferences it has to apply there
+    arrive together: a second query here would be a second round trip on every
+    five-second report from every machine.
+    """
+    return _one("""
+        SELECT json_build_object(
+          'active_alerts', (SELECT coalesce(json_agg(a ORDER BY a.created_at DESC), '[]'::json) FROM (
+              SELECT id, alert_type, severity, message, created_at FROM alerts
+              WHERE owner_sub = %(owner)s AND resolved = FALSE AND hostname = %(host)s
+              ORDER BY created_at DESC LIMIT 5) a),
+          -- A machine nobody has configured keeps the menu bar app, which is
+          -- what every collector did before the setting existed.
+          'menu_bar', coalesce((SELECT menu_bar_enabled FROM host_preferences
+              WHERE owner_sub = %(owner)s AND hostname = %(host)s), TRUE)
+        )::text AS doc
+    """, {"owner": owner_sub, "host": hostname})["doc"]
+
+
 # --- dashboard -------------------------------------------------------------
 
 def get_dashboard(owner_sub, hostname=None):
@@ -274,6 +328,19 @@ def get_dashboard(owner_sub, hostname=None):
           'system_info', (SELECT data FROM system_info
               WHERE owner_sub = %(owner)s
                 AND (%(host)s::text IS NULL OR hostname = %(host)s)
-              ORDER BY updated_at DESC LIMIT 1)
+              ORDER BY updated_at DESC LIMIT 1),
+          -- Keyed on the machine actually being shown, which is not the
+          -- requested host when the dashboard is following whichever machine
+          -- reported most recently. Null when none has reported at all.
+          'preferences', (SELECT json_build_object(
+                'hostname', h.hostname,
+                'menu_bar_enabled', coalesce(p.menu_bar_enabled, TRUE),
+                'menu_bar_applied', p.menu_bar_applied)
+              FROM (SELECT hostname FROM filesystem_metrics
+                    WHERE owner_sub = %(owner)s AND filesystem = '/'
+                      AND (%(host)s::text IS NULL OR hostname = %(host)s)
+                    ORDER BY time DESC LIMIT 1) h
+              LEFT JOIN host_preferences p
+                ON p.owner_sub = %(owner)s AND p.hostname = h.hostname)
         )::text AS doc
     """, {"owner": owner_sub, "host": hostname})["doc"]

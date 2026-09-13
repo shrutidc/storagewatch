@@ -557,3 +557,50 @@ main {
   white-space: pre-wrap;
   margin: 10px 0;
 }
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: #667eea;
+  cursor: pointer;
+}
+
+.toggle-row input:disabled,
+.toggle-row:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.toggle-status {
+  margin: 10px 0 0;
+}
+
+/* A quieter second line inside a table cell — "Not mounted", or how a volume
+   is reached when it isn't mounted directly. */
+.cell-note {
+  display: block;
+  font-size: 11px;
+  color: #999;
+}
+
+.pill-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+/* Long opaque identifiers (snapshot names, UUIDs) must not widen the table. */
+.wrap-anywhere {
+  overflow-wrap: anywhere;
+}

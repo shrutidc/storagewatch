@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
+import json
 import os
 import requests
 import time
@@ -13,7 +14,8 @@ from models import Metrics, MetricsResponse, Alert
 from database import (init_db, insert_metrics, get_latest_metrics, get_metrics_history,
                       insert_alert, has_recent_alert, get_recent_alerts,
                       get_all_volumes_latest, save_system_info, get_system_info,
-                      get_hosts, create_agent_token, list_agent_tokens, get_dashboard)
+                      get_hosts, create_agent_token, list_agent_tokens, get_dashboard,
+                      get_agent_state, set_menu_bar_enabled, set_menu_bar_applied)
 from alerts import detect_anomalies
 from auth import require_user, require_agent, check_config
 
@@ -66,15 +68,18 @@ def post_metrics(metrics: Metrics, owner_sub: str = Depends(require_agent)):
                 metric_value=metrics.used_percent if anomaly["type"] == "HIGH_CAPACITY" else metrics.write_bytes_per_sec,
             )
 
+        # The collector reports this only when it changes, so the write happens
+        # about once per collector start rather than every five seconds.
+        if metrics.menu_bar_installed is not None:
+            set_menu_bar_applied(owner_sub, metrics.hostname, metrics.menu_bar_installed)
+
         reply = {"status": "ok", "alerts": len(anomalies)}
         if metrics.filesystem == "/":
-            # The collector hands these to the menu bar app and to macOS
-            # notifications, so the Mac shows alerts without anyone signing in.
-            reply["active_alerts"] = [
-                {"id": a["id"], "alert_type": a["alert_type"], "severity": a["severity"],
-                 "message": a["message"], "created_at": a["created_at"].isoformat()}
-                for a in get_recent_alerts(owner_sub, limit=5, hostname=metrics.hostname)
-            ]
+            # The reply is the only channel back to the Mac: a browser cannot
+            # reach it. It carries the alerts the menu bar app and macOS
+            # notifications show without anyone signing in, plus the settings
+            # the administrator changed in the dashboard for that machine.
+            reply.update(json.loads(get_agent_state(owner_sub, metrics.hostname)))
         return reply
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -169,6 +174,25 @@ def get_hosts_endpoint(user: dict = Depends(require_user)):
         ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/preferences")
+def set_preferences(data: dict, user: dict = Depends(require_user)):
+    """Change a setting the collector on one of the caller's machines applies.
+
+    Saving is not doing: this only records the choice. The collector on that
+    Mac picks it up with its next report, which is why the dashboard shows the
+    change as pending until that machine confirms it.
+    """
+    hostname = (data or {}).get("hostname")
+    enabled = (data or {}).get("menu_bar_enabled")
+    if not hostname or not isinstance(enabled, bool):
+        raise HTTPException(status_code=400,
+                            detail="hostname and a boolean menu_bar_enabled are required")
+    try:
+        set_menu_bar_enabled(user["sub"], hostname, enabled)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "ok", "hostname": hostname, "menu_bar_enabled": enabled}
 
 @app.get("/api/agent-tokens")
 def list_agent_tokens_endpoint(user: dict = Depends(require_user)):
@@ -340,7 +364,15 @@ def build_live_context(owner_sub: str, hostname: str | None = None) -> str:
         "observability dashboard. Answer the administrator's questions about THIS machine "
         "using the live telemetry below. Cite the actual numbers. Be concise — a few "
         "sentences unless asked for more. If the telemetry doesn't cover something, say so "
-        "rather than guessing. Suggest concrete macOS commands where useful.",
+        "rather than guessing.",
+        "",
+        "The administrator is reading this dashboard, which already shows everything "
+        "below — device identifiers, mount points, roles, seal state, encryption, "
+        "FileVault, snapshots, SMART status and capacity. Answer from it directly. Do NOT "
+        "tell them to run a command to look up something that appears below; that is the "
+        "question they just asked you, and the dashboard exists so they don't have to. "
+        "Name the section of the page where it is shown instead. Suggest a command only "
+        "for something the telemetry genuinely does not carry, or to carry out a change.",
         "",
         "=== LIVE TELEMETRY ===",
     ]
@@ -380,13 +412,28 @@ def build_live_context(owner_sub: str, hostname: str | None = None) -> str:
         for c in si.get("apfs_containers", []):
             used = c["capacity_ceiling"] - c["capacity_free"]
             lines.append(
-                f"APFS container {c['container_reference']} (backed by {c['physical_store']}): "
-                f"{used/1e9:.1f} GB used of {c['capacity_ceiling']/1e9:.1f} GB"
+                f"APFS container {c['container_reference']} (backed by {c['physical_store']}, "
+                f"UUID {c.get('uuid') or 'unknown'}): "
+                f"{used/1e9:.1f} GB used of {c['capacity_ceiling']/1e9:.1f} GB, "
+                f"{c['capacity_free']/1e9:.1f} GB not allocated"
             )
             for v in c.get("volumes", []):
+                # Mount point and seal state are the questions that used to send
+                # people to `diskutil apfs list`, so they belong in the context.
+                if v.get("mount_point"):
+                    where = f"mounted at {v['mount_point']}"
+                elif v.get("snapshot"):
+                    where = (f"mounted at {v['snapshot']['mount_point']} via snapshot "
+                             f"{v['snapshot']['device_identifier']}")
+                else:
+                    where = "not mounted"
                 lines.append(
-                    f"  - volume {v['name']} [{', '.join(v['roles']) or 'no role'}]: "
+                    f"  - volume {v['name']} on device "
+                    f"{v.get('device_identifier') or 'unknown'} "
+                    f"[{', '.join(v['roles']) or 'no role'}], {where}: "
                     f"{v['capacity_in_use']/1e9:.1f} GB"
+                    f"{', sealed' if v.get('sealed') else ''}"
+                    f"{', read-only' if v.get('mount_point') and not v.get('writable', True) else ''}"
                     f"{', encrypted' if v['encrypted'] else ''}"
                     f"{', FileVault' if v['filevault'] else ''}"
                 )
