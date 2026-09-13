@@ -27,6 +27,23 @@ from auth import require_user, require_agent, check_config
 # behind whichever one was waiting on the database.
 app = FastAPI()
 
+# Vite fingerprints its bundles, so /assets/index-<hash>.js never changes
+# meaning and can be cached forever. index.html is the opposite: it names which
+# bundles are current, so a cached copy keeps loading an old app after every
+# deploy. Neither carried a Cache-Control header, which left browsers guessing
+# a freshness window from Last-Modified — and guessing wrong, holding a stale
+# shell that pointed at bundles the server had already replaced.
+@app.middleware("http")
+async def cache_control(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/assets/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif response.headers.get("content-type", "").startswith("text/html"):
+        # Not "no-store": the browser may keep it, but must revalidate first,
+        # so an unchanged shell still costs only a 304.
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "https://storagewatch.tech"],
