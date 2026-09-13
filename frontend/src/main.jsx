@@ -26,6 +26,13 @@ function AuthProvider({ children }) {
         audience: import.meta.env.VITE_AUTH0_AUDIENCE,
       }}
       onRedirectCallback={appState => navigate(appState?.returnTo || '/', { replace: true })}
+      // Keep the session across page loads so people log in once. With the
+      // in-memory default, every full load — including the two in connecting a
+      // Mac — fell back to a silent-login iframe that needs third-party cookies
+      // browsers block, and sent the user back to the login page.
+      cacheLocation="localstorage"
+      useRefreshTokens
+      useRefreshTokensFallback
     >
       {children}
     </Auth0Provider>

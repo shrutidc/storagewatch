@@ -32,6 +32,11 @@ request names a registered API. In the Auth0 dashboard:
    for your SPA. Tenants set to *per-app authorization* grant nothing by default, so
    creating the API in step 1 is not sufficient on its own.
 
+4. **APIs → StorageWatch API → Settings**: enable **Allow Offline Access**, and in
+   **Applications → your SPA → Settings** enable **Refresh Token Rotation**. Optional —
+   without them a login lasts until the access token expires (24 h by default); with
+   them it renews silently.
+
 Skipping step 1 makes Auth0 return an opaque token and every API call 401s. Skipping
 step 3 fails earlier and louder — `/authorize` refuses with *"Client is not authorized
 to access resource server"* and login never completes.

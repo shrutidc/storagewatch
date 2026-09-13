@@ -110,10 +110,18 @@ to access resource server"*. This cost about an hour; it is now README step 3.
 Only the dashboard app is granted, and only User-delegated. Client Access is for
 `client_credentials`, which this app never uses.
 
-### No `cacheLocation="localstorage"`
+### Tokens are cached in localStorage, with refresh tokens
 
-Reverted to the SDK's in-memory default so access tokens are not readable by any
-injected script.
+The SDK's in-memory default was chosen first so access tokens aren't readable by an
+injected script. In practice it meant logging in again on every full page load — and
+connecting a Mac involves two (the collector opens `/connect` in a new tab, then
+redirects back) — because the fallback, a silent re-login iframe, needs third-party
+cookies that browsers block. Tokens now persist in `localStorage`, refresh tokens renew
+them where the tenant allows offline access, and logout clears them. The accepted cost is
+exposure to XSS; React escapes everything it renders and the page loads no third-party
+scripts. The stricter alternative is an Auth0 custom domain (e.g.
+`login.storagewatch.tech`), which makes the session cookie first-party so an in-memory
+session can be restored silently.
 
 ### `React.StrictMode` removed
 
