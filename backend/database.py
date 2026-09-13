@@ -76,6 +76,19 @@ def init_db():
     with open(schema_path, "r") as f:
         _execute(f.read())
 
+# Every table a request path reads from. The dashboard joins against all of
+# them, so one missing table is a broken dashboard rather than a missing panel.
+REQUIRED_TABLES = ("filesystem_metrics", "alerts", "agent_tokens", "system_info",
+                   "host_preferences", "user_usage")
+
+def missing_tables():
+    """Which required tables do not exist. Empty when the schema is complete."""
+    rows = _all("""
+        SELECT name FROM unnest(%s::text[]) AS name
+        WHERE to_regclass('public.' || name) IS NULL
+    """, (list(REQUIRED_TABLES),))
+    return [r["name"] for r in rows]
+
 
 # --- agent credentials -----------------------------------------------------
 

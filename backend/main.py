@@ -16,7 +16,8 @@ from database import (init_db, insert_metrics, get_latest_metrics, get_metrics_h
                       get_all_volumes_latest, save_system_info, get_system_info,
                       get_hosts, create_agent_token, list_agent_tokens, get_dashboard,
                       get_agent_state, set_menu_bar_enabled, set_menu_bar_applied,
-                      insert_user_usage, get_user_usage_latest, get_user_usage_history)
+                      insert_user_usage, get_user_usage_latest, get_user_usage_history,
+                      missing_tables)
 from alerts import detect_anomalies, detect_user_anomalies
 from auth import require_user, require_agent, check_config
 
@@ -43,8 +44,40 @@ def startup():
     except Exception as e:
         print(f"Warning: Database initialization failed: {e}")
 
+# Checked once and then remembered: the host polls /health constantly, and a
+# query per poll is load the free instance cannot spare. Tables do not vanish
+# once created, so one confirmation per process is enough.
+_schema_verified = False
+
 @app.get("/health")
 def health_check():
+    """Liveness, and whether this build's schema actually applied.
+
+    The host routes traffic by this check, so reporting unhealthy when a
+    migration has not landed means a deployment that cannot serve requests is
+    not promoted over the one currently serving them. Reporting "ok" while
+    /api/dashboard returns 500 to every user would be the worse failure.
+    """
+    global _schema_verified
+    if _schema_verified:
+        return {"status": "ok"}
+
+    try:
+        missing = missing_tables()
+        if missing:
+            # A migration can fail on a transient error during startup, so try
+            # once more here rather than staying broken until a redeploy.
+            init_db()
+            missing = missing_tables()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"database unavailable: {e}")
+
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail=f"schema incomplete, missing: {', '.join(missing)}")
+
+    _schema_verified = True
     return {"status": "ok"}
 
 @app.post("/api/metrics")
