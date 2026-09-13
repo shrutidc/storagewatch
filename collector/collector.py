@@ -592,15 +592,23 @@ def get_user_accounts():
         username, uid = fields[0], int(fields[1])
         if uid < 500 or username.startswith("_"):
             continue
-        home = f"/Users/{username}"
+        home, shell = f"/Users/{username}", ""
         try:
             read = subprocess.run(["dscl", ".", "-read", f"/Users/{username}",
-                                   "NFSHomeDirectory"], capture_output=True,
+                                   "NFSHomeDirectory", "UserShell"], capture_output=True,
                                   text=True, timeout=10).stdout
-            if ":" in read:
-                home = read.split(":", 1)[1].strip() or home
+            for line in read.splitlines():
+                key, _, value = line.partition(":")
+                if key == "NFSHomeDirectory":
+                    home = value.strip() or home
+                elif key == "UserShell":
+                    shell = value.strip()
         except Exception:
             pass
+        # Software that creates its own account (MacPorts' "macports", uid 502)
+        # lands in the people range but has no login shell: not a person.
+        if shell.endswith(("/false", "/nologin")):
+            continue
         users.append({"username": username, "uid": uid, "home": home})
     return users
 
@@ -644,6 +652,32 @@ def parse_quota_output(text):
                     "file_hard_limit": numbers[5] if len(numbers) > 5 else 0,
                 })
     return {"enabled": bool(filesystems), "filesystems": filesystems}
+
+def get_account_summary():
+    """Who has an account, who is an administrator, who is signed in now, and
+    under what quota. All of it comes from the directory service, who(1) and
+    quota(1) — none of which opens a file — so it is reported on every Mac,
+    including those where per-user sizing is off."""
+    accounts = get_user_accounts()
+    quotas = get_user_quotas(accounts)
+    try:
+        who = subprocess.run(["who"], capture_output=True, text=True, timeout=10).stdout
+        signed_in = {line.split()[0] for line in who.splitlines() if line.strip()}
+    except Exception:
+        signed_in = set()
+    summary = []
+    for account in accounts:
+        try:
+            admin = subprocess.run(
+                ["dseditgroup", "-o", "checkmember", "-m", account["username"], "admin"],
+                capture_output=True, timeout=10).returncode == 0
+        except Exception:
+            admin = None
+        summary.append({**account, "admin": admin,
+                        "signed_in": account["username"] in signed_in,
+                        "quota": quotas.get(account["username"],
+                                            {"enabled": False, "filesystems": []})})
+    return summary
 
 def get_user_quotas(users):
     """Quota limits per user, where the filesystem has quotas enabled."""
@@ -831,6 +865,7 @@ def send_system_info():
         # Lets the dashboard say per-user sizing is off, rather than waiting
         # for a measurement that will never come.
         "user_sizing": USER_SIZING,
+        "user_accounts": get_account_summary(),
     }
     try:
         requests.post(f"{BACKEND_URL}/api/system-info", json=system_info,
@@ -1114,7 +1149,10 @@ def main():
                 check_disk_health(system_info["physical_disks"])
                 check_block_health(system_info["block_health"])
                 check_network_mounts(system_info["network_mounts"])
-                send_user_report()
+                # Accounts and quotas ride along in system info; sizes, which
+                # need folder access, only where the Mac opted in.
+                if USER_SIZING:
+                    send_user_report()
 
             write_status(samples, alerts, system_info)
             cycle += 1

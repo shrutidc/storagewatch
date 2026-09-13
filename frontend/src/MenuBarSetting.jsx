@@ -56,9 +56,8 @@ function MenuBarSetting() {
     <div className="detail-section">
       <h2>Menu bar app</h2>
       <p className="section-sub">
-        StorageWatch can sit in this Mac's menu bar and show its storage, throughput and
-        alerts at a glance, without opening this page or signing in again. Monitoring runs
-        either way — this only controls whether the Mac carries the icon.
+        Storage, throughput and alerts at a glance in the Mac's menu bar, without signing
+        in. Monitoring runs either way.
       </p>
       <label className="toggle-row">
         <input

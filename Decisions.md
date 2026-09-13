@@ -190,6 +190,18 @@ Everything else it reports comes from system tools (`diskutil`, `ioreg`, `statfs
 and the Users section explains the switch instead of waiting for a measurement that
 will never come.
 
+### Each fact appears once on the dashboard
+
+Folding the tabs into one page left the same numbers repeated: capacity four times
+(Storage card, Storage Capacity cards, the volume card, the APFS container), current
+throughput twice, disks split across two sections, alert counts in cards, a table and the
+list. Now the cards at the top carry current storage and throughput; APFS lists
+containers and volumes without repeating the boot container's capacity; Other volumes
+shows only local non-APFS volumes; Physical disks is one table including the block
+driver's health counts; I/O performance and Alerts are one section each. Users shows
+accounts, admin rights, sign-ins and quotas — none of which needs file access — and sizes
+only where a Mac opted in.
+
 ### Missing secrets abort startup
 
 Absent `AUTH0_DOMAIN` or `AUTH0_AUDIENCE`, the process exits. Failing

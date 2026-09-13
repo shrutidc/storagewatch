@@ -235,15 +235,18 @@ sample — otherwise a disk sitting at 85% would add a row and an LLM call every
 
 ## Dashboard
 
-One page, per the PRD's single-page dashboard (§21): system status and host, storage /
-read / write cards, then I/O performance with the graph, every alert, volumes, physical
-disks and APFS containers. Questions about any of it go to the **Ask AI** chat.
+One page, per the PRD's single-page dashboard (§21), where each fact appears once:
+system status and host, then storage / read / write cards, then Alerts, I/O performance
+(graph, average and peak, totals since boot), APFS containers and volumes, Other volumes
+(local non-APFS only), Shared volumes, Physical disks with their health, Users and
+quotas, and the menu bar switch. Questions about any of it go to the **Ask AI** chat.
 **Settings** lists connected Macs and the install command. Polling pauses while the tab
 is in the background.
 
-**Block storage health** reports, per disk, the I/O the hardware failed to complete
-(errors) or had to repeat (retries), its average service time in microseconds, and
-sustained IOPS and throughput. These come from the kernel's own block storage driver via
+**Physical disks** reports, per disk, its model, media, capacity and SMART status
+alongside the I/O the hardware failed to complete (errors) or had to repeat (retries),
+its average service time in microseconds, and sustained IOPS. The health counts come
+from the kernel's own block storage driver via
 `ioreg`, and move long before SMART stops saying "Verified" — which is all `diskutil`
 will tell you, and only once a disk is already failing.
 
@@ -253,9 +256,11 @@ against a share has a five-second limit, so a server that has gone away is repor
 not responding rather than stalling the collector — an unguarded `statvfs` on a dead NFS
 mount blocks in the kernel forever and would take the local disks down with it.
 
-**Users and quotas** — on a Mac that opts in to per-user sizing (see below; it is off by
-default) — shows each account's home directory size, its share of everything in
-use, quota limits from `quota(1)`, growth since the previous measurement, and the largest
+**Users and quotas** lists every account with its home, whether it is an administrator,
+whether it is signed in now, and its quota from `quota(1)` — all from the directory
+service, none of it read from files. On a Mac that opts in to per-user sizing (see
+below; it is off by default) it also shows each account's home directory size, its
+share of everything in use, growth since the previous measurement, and the largest
 folders inside each home. Sizing means walking the directory — 77 seconds for a 68 GB
 home on the machine this was written on — so the collector measures on a background
 thread every 30 minutes (`USER_USAGE_INTERVAL_SECONDS`) and the page says when the

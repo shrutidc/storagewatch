@@ -4,7 +4,6 @@ import Alerts from './Alerts.jsx'
 import Volumes from './Volumes.jsx'
 import Disks from './Disks.jsx'
 import Apfs from './Apfs.jsx'
-import BlockHealth from './BlockHealth.jsx'
 import NetworkVolumes from './NetworkVolumes.jsx'
 import Users from './Users.jsx'
 import MenuBarSetting from '../MenuBarSetting.jsx'
@@ -47,13 +46,14 @@ function Dashboard() {
         </div>
       </div>
 
-      <Performance />
+      {/* Each fact appears once: the cards above carry current storage and
+          throughput, and every section below adds only what they can't. */}
       <Alerts />
-      <Volumes />
-      <Disks />
-      <BlockHealth />
+      <Performance />
       <Apfs />
+      <Volumes />
       <NetworkVolumes />
+      <Disks />
       <Users />
       <MenuBarSetting />
     </>

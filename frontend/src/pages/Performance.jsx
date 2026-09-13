@@ -1,90 +1,50 @@
 import { useOutletContext } from 'react-router-dom'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { bytes } from '../format.js'
 
-const tb = (bytes) => bytes >= 1e12 ? `${(bytes / 1e12).toFixed(2)} TB` : `${(bytes / 1e9).toFixed(1)} GB`
+const avg = (v) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0)
+const peak = (v) => (v.length ? Math.max(...v) : 0)
 
-function stats(values) {
-  if (!values.length) return { current: 0, avg: 0, peak: 0 }
-  return {
-    current: values[values.length - 1],  // history is oldest-first
-    avg: values.reduce((a, b) => a + b, 0) / values.length,
-    peak: Math.max(...values),
-  }
-}
-
+// Throughput over time. The current reading is in the cards above, so this adds
+// only what they can't show: the trend, its average and peak, and the totals
+// since boot. macOS counts I/O per physical disk, not per volume.
 function Performance() {
-  const { history, metrics, systemInfo } = useOutletContext()
-  const reads = history.map(h => parseFloat(h.read))
-  const writes = history.map(h => parseFloat(h.write))
-  const r = stats(reads)
-  const w = stats(writes)
+  const { history, systemInfo } = useOutletContext()
+  const reads = history.map(h => h.read)
+  const writes = history.map(h => h.write)
   const io = systemInfo?.io_totals || {}
 
   return (
-    <>
-      <div className="detail-section">
-        <h2>I/O Performance</h2>
-        <p className="section-sub">
-          {history.length} samples · throughput is measured at the physical disk level
-          (macOS exposes no per-volume I/O counters)
+    <div className="detail-section">
+      <h2>I/O performance</h2>
+      <p className="section-sub">
+        Last {history.length} samples, 5 s apart · read avg {avg(reads).toFixed(1)} MB/s,
+        peak {peak(reads).toFixed(1)} · write avg {avg(writes).toFixed(1)} MB/s,
+        peak {peak(writes).toFixed(1)}
+      </p>
+      {history.length > 0 ? (
+        <ResponsiveContainer width="100%" height={260}>
+          <LineChart data={history}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="time" />
+            <YAxis label={{ value: 'MB/s', angle: -90, position: 'insideLeft' }} />
+            <Tooltip />
+            <Legend />
+            {/* No animation: data refreshes every 5 s and would redraw each time. */}
+            <Line type="monotone" dataKey="read" stroke="#8884d8" name="Read" dot={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="write" stroke="#82ca9d" name="Write" dot={false} isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      ) : (
+        <p>Loading chart data...</p>
+      )}
+      {io.read_bytes_total !== undefined && (
+        <p className="metric-detail">
+          Since boot: {bytes(io.read_bytes_total)} read in {io.read_count.toLocaleString()} operations
+          · {bytes(io.write_bytes_total)} written in {io.write_count.toLocaleString()}
         </p>
-
-        <div className="table-scroll">
-          <table className="detail-table">
-            <thead>
-              <tr><th></th><th>Current</th><th>Average</th><th>Peak</th></tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Read throughput</td>
-                <td>{r.current.toFixed(1)} MB/s</td>
-                <td>{r.avg.toFixed(1)} MB/s</td>
-                <td>{r.peak.toFixed(1)} MB/s</td>
-              </tr>
-              <tr>
-                <td>Write throughput</td>
-                <td>{w.current.toFixed(1)} MB/s</td>
-                <td>{w.avg.toFixed(1)} MB/s</td>
-                <td>{w.peak.toFixed(1)} MB/s</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="detail-section">
-        <h2>Performance Graph</h2>
-        <p className="section-sub">Last {history.length} samples, collected every 5 seconds</p>
-        {history.length > 0 ? (
-          <ResponsiveContainer width="100%" height={400}>
-            <LineChart data={history}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" />
-              <YAxis label={{ value: 'MB/s', angle: -90, position: 'insideLeft' }} />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="read" stroke="#8884d8" name="Read" dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="write" stroke="#82ca9d" name="Write" dot={false} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        ) : (
-          <p>Loading chart data...</p>
-        )}
-      </div>
-
-      <div className="detail-section">
-        <h2>Cumulative I/O (since boot)</h2>
-        <p className="section-sub">Totals reported by the kernel for {metrics.hostname}</p>
-        <table className="detail-table kv-table">
-          <tbody>
-            <tr><td>Total bytes read</td><td>{io.read_bytes_total !== undefined ? tb(io.read_bytes_total) : '—'}</td></tr>
-            <tr><td>Total bytes written</td><td>{io.write_bytes_total !== undefined ? tb(io.write_bytes_total) : '—'}</td></tr>
-            <tr><td>Read operations</td><td>{io.read_count !== undefined ? io.read_count.toLocaleString() : '—'}</td></tr>
-            <tr><td>Write operations</td><td>{io.write_count !== undefined ? io.write_count.toLocaleString() : '—'}</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </>
+      )}
+    </div>
   )
 }
 

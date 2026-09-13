@@ -1,77 +1,38 @@
 import { useOutletContext } from 'react-router-dom'
 
+// Every unresolved alert, newest first. Severity is the colour and the label in
+// each header, so no separate counts or breakdown table repeat it.
 function Alerts() {
   const { alerts } = useOutletContext()
-
-  const bySeverity = alerts.reduce((acc, a) => {
-    acc[a.severity] = (acc[a.severity] || 0) + 1
-    return acc
-  }, {})
-
-  const byType = alerts.reduce((acc, a) => {
-    acc[a.alert_type] = (acc[a.alert_type] || 0) + 1
-    return acc
-  }, {})
+  const critical = alerts.filter(a => a.severity === 'critical').length
 
   return (
-    <>
-      <div className="detail-section">
-        <h2>Alerts</h2>
-        <p className="section-sub">{alerts.length} unresolved alert{alerts.length === 1 ? '' : 's'}</p>
-        <div className="metrics-grid">
-          <div className="metric-card">
-            <h3>Critical</h3>
-            <p className="metric-value">{bySeverity.critical || 0}</p>
-          </div>
-          <div className="metric-card">
-            <h3>Warning</h3>
-            <p className="metric-value">{bySeverity.warning || 0}</p>
-          </div>
-          <div className="metric-card">
-            <h3>Distinct Types</h3>
-            <p className="metric-value">{Object.keys(byType).length}</p>
-          </div>
-        </div>
-
-        {Object.keys(byType).length > 0 && (
-          <>
-            <h3>Breakdown by type</h3>
-            <table className="detail-table">
-              <thead><tr><th>Alert type</th><th>Count</th></tr></thead>
-              <tbody>
-                {Object.entries(byType).map(([type, count]) => (
-                  <tr key={type}><td>{type}</td><td>{count}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
-      </div>
-
-      <div className="detail-section">
-        <h2>Alert Detail</h2>
-        <p className="section-sub">Every unresolved alert, newest first · ask the AI (bottom right) about any of them</p>
-        {alerts.length === 0 ? (
-          <p className="no-alerts">✓ No active alerts</p>
-        ) : (
+    <div className="detail-section">
+      <h2>Alerts</h2>
+      {alerts.length === 0 ? (
+        <p className="no-alerts">✓ No active alerts</p>
+      ) : (
+        <>
+          <p className="section-sub">
+            {alerts.length} unresolved{critical ? `, ${critical} critical` : ''} · newest
+            first · ask the AI (bottom right) about any of them
+          </p>
           <div className="alerts-list">
             {alerts.map(a => (
               <div key={a.id} className={`alert-item alert-${a.severity.toLowerCase()}`}>
                 <div className="alert-header">
-                  <span className="alert-type">{a.alert_type}</span>
-                  <span className="alert-time">{new Date(a.created_at).toLocaleString()}</span>
+                  <span className="alert-type">{a.alert_type.replaceAll('_', ' ')}</span>
+                  <span className="alert-time">
+                    {a.severity} · {new Date(a.created_at).toLocaleString()}
+                  </span>
                 </div>
                 <p className="alert-message">{a.message}</p>
-                <p className="metric-detail">
-                  Severity: {a.severity} · Host: {a.hostname}
-                  {a.metric_value != null ? ` · Value: ${a.metric_value.toFixed(2)}` : ''}
-                </p>
               </div>
             ))}
           </div>
-        )}
-      </div>
-    </>
+        </>
+      )}
+    </div>
   )
 }
 
