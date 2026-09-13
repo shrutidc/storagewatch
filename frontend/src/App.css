@@ -141,10 +141,27 @@ body {
 }
 
 .sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   color: var(--on-accent);
   font-size: 18px;
   font-weight: 600;
   padding: 0 20px 20px;
+}
+
+.brand-logo {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.login-logo {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 14px;
+  /* Lifts the tile off the card, like an app icon. */
+  filter: drop-shadow(0 6px 14px var(--shadow-3));
 }
 
 .sidebar-link {

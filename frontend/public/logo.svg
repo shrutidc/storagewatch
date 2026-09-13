@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="StorageWatch">
+  <!-- The app's accent gradient, as an app-icon tile -->
+  <defs>
+    <linearGradient id="sw-tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#667eea"/>
+      <stop offset="1" stop-color="#764ba2"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#sw-tile)"/>
+  <!-- A drive, in the spirit of the menu bar icon: body, bay divider, status light -->
+  <rect x="11" y="18" width="42" height="28" rx="6" fill="none" stroke="#fff" stroke-width="3.5"/>
+  <line x1="11" y1="35" x2="53" y2="35" stroke="#fff" stroke-width="3"/>
+  <circle cx="45.5" cy="40.5" r="2.4" fill="#fff"/>
+  <!-- An activity trace in the upper bay: the "watch" -->
+  <polyline points="17,27.5 23,27.5 26,22.5 30,31 33,25.5 35,27.5 47,27.5" fill="none"
+            stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
