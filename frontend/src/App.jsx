@@ -37,6 +37,7 @@ function App() {
   const [chatOpen, setChatOpen] = useState(false)
 
   const onSettings = location.pathname === '/settings'
+  const onConnect = location.pathname === '/connect'
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -178,7 +179,10 @@ function App() {
         <div className="login-box">
           <h1>StorageWatch</h1>
           <p>Monitor your macOS storage with AI-powered insights</p>
-          <button className="login-btn" onClick={() => loginWithRedirect()}>Login with Auth0</button>
+          {/* Come back to the page that asked, e.g. /connect with its query. */}
+          <button className="login-btn" onClick={() => loginWithRedirect({
+            appState: { returnTo: location.pathname + location.search },
+          })}>Login with Auth0</button>
         </div>
       </div>
     )
@@ -241,13 +245,14 @@ function App() {
               </p>
               <p className="alert-ai-explanation">{authError}</p>
             </div>
-          ) : (metrics || onSettings) ? (
-            // Settings must render without metrics: a new user has no data
-            // until they mint an agent token, which is on that very page.
+          ) : (metrics || onSettings || onConnect) ? (
+            // Settings and Connect must render without metrics: a new user has
+            // no data until their first collector connects.
             <Outlet context={{ metrics, history, alerts, volumes, systemInfo, lastRefresh, hosts, authConfig }} />
           ) : (
             <p className="no-data">
-              No metrics yet. Add an agent token under Settings and start the collector.
+              No metrics yet. On the Mac to monitor, run <code>python collector/collector.py</code>{' '}
+              — it opens this site, you sign in, and data appears here within seconds.
             </p>
           )}
         </main>

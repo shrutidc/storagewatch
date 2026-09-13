@@ -62,10 +62,21 @@ public domain.
 
 The two callers cannot authenticate the same way: the dashboard has a signed-in human,
 the collector runs unattended. So the dashboard sends an Auth0 access token verified
-against the tenant's JWKS, and the collector presents a per-user agent token minted
-from the dashboard and stored only as a hash. Critically the
+against the tenant's JWKS, and the collector presents a per-user agent token obtained
+through a one-time browser sign-in and stored only as a hash. Critically the
 roles are **disjoint** — the agent token is refused on dashboard reads and a user token
 is refused on ingest. A compromised agent secret cannot read history.
+
+### The collector connects itself through the browser
+
+Copying a token from a Settings page into `.env` was the step people disliked most. A
+web page cannot start a program on the Mac, so the collector is still started by hand —
+but on first run it opens the dashboard's `/connect` page, the administrator signs in and
+clicks Connect, and the page redirects the minted token to a one-shot listener on
+`127.0.0.1`. The same pattern CLIs such as `gh` and `vercel` use. The redirect only ever
+targets the loopback address on a numeric port, and a random `state` stops any other page
+from planting a token. No backend change was needed: the page calls the existing
+`POST /api/agent-tokens`.
 
 ### Missing secrets abort startup
 

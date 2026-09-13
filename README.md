@@ -44,8 +44,8 @@ to access resource server"* and login never completes.
    cp frontend/.env.example frontend/.env   # frontend (Vite reads VITE_* here only)
    ```
    Fill in `TIGER_DATABASE_URL`, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE` and
-   `BACKBOARD_API_KEY`. Leave `AGENT_TOKEN` empty for now — it is minted from the
-   dashboard in step 4. `AUTH0_AUDIENCE` and `VITE_AUTH0_AUDIENCE` must match.
+   `BACKBOARD_API_KEY`. Leave `AGENT_TOKEN` empty — the collector connects itself in
+   step 4. `AUTH0_AUDIENCE` and `VITE_AUTH0_AUDIENCE` must match.
 
 2. **Python dependencies:**
    ```bash
@@ -61,12 +61,13 @@ to access resource server"* and login never completes.
    ```
    The backend creates its tables on startup, so no manual migration step is needed.
 
-4. **Connect the collector.** Log in at `http://localhost:3000`, open **Settings →
-   Generate agent token**, and put it in `.env` as `AGENT_TOKEN=…` (it is shown once).
-   Then, in a third terminal:
+4. **Start the collector** in a third terminal:
    ```bash
    cd collector && python collector.py
    ```
+   On first run it opens the dashboard in your browser. Sign in, click **Connect**, and
+   you land on the Dashboard as data starts arriving. The token is saved to
+   `~/.storagewatch/agent_token`, so later runs connect without asking.
 
 ### Production build
 
@@ -112,7 +113,7 @@ every 5 seconds, which keeps the service awake as long as the Mac is running.
 | Caller | Credential |
 |---|---|
 | Dashboard (browser) | Auth0 access token, verified against the tenant's JWKS |
-| Collector agent | A per-user agent token, minted from the dashboard's Settings page |
+| Collector agent | A per-user agent token, obtained once by signing in through the browser |
 
 The backend refuses to start without `AUTH0_DOMAIN` and `AUTH0_AUDIENCE`, rather than
 serving telemetry unprotected.
@@ -125,7 +126,7 @@ filtered to the signed-in user. One person's machines are never visible to anoth
 including to the AI assistant, whose context is built from the caller's own data.
 
 Agent tokens are stored only as a SHA-256 hash — a leaked database yields no working
-credentials — and the plaintext is shown once, when minted. Rows predating ownership
+credentials — and the plaintext only ever lives in `~/.storagewatch/agent_token` on the Mac. Rows predating ownership
 have a NULL owner and are visible to nobody, which is the safe direction.
 
 A user with several machines picks between them with the host selector in the header;
@@ -144,7 +145,7 @@ Mac Agent (collector) → FastAPI Backend → Tiger Data
 ## API
 
 Every API endpoint except `/health` is authenticated. `agent` means an agent token
-minted from Settings; `user` means an Auth0 access token. (In a production build the backend
+obtained by the collector's browser sign-in; `user` means an Auth0 access token. (In a production build the backend
 also serves the dashboard's static files on unmatched paths — see above.)
 
 | Method | Path | Auth | Purpose |
@@ -160,7 +161,7 @@ also serves the dashboard's static files on unmatched paths — see above.)
 | GET | `/api/system-info` | user | Read that inventory |
 | GET | `/api/hosts` | user | The caller's reporting machines, most recent first |
 | GET | `/api/agent-tokens` | user | Metadata for the caller's agent tokens |
-| POST | `/api/agent-tokens` | user | Mint an agent token (plaintext returned once) |
+| POST | `/api/agent-tokens` | user | Mint an agent token; called by the Connect page (plaintext returned once) |
 | POST | `/api/ai/chat` | user | Conversational analysis, grounded in live telemetry |
 | POST | `/api/ai/explain` | user | Explain one alert (`{"alert_id": N}`) with Backboard; stored on the alert |
 
@@ -226,8 +227,10 @@ Python 3.9. Use 3.10+.
 only exposes `VITE_`-prefixed names, and prefers `.env.local` over `.env` if both
 exist. Restart the dev server after editing; values are inlined at startup.
 
-**Collector logs 401** — `AGENT_TOKEN` in `.env` must be one minted under Settings; a
-self-generated value is rejected. Restart the collector after changing it.
+**Collector says the backend rejected its token** — the token belongs to a different
+backend or database (e.g. minted locally, now pointed at Render). The collector drops it
+and reconnects through the browser on its own. If `.env` sets `AGENT_TOKEN`, remove it,
+or that stale value is used again on the next start.
 
 ## Project Structure
 

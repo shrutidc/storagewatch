@@ -65,7 +65,7 @@ collector does not.
 | Caller | Credential | Enforced by |
 |---|---|---|
 | Dashboard | Auth0 access token, verified against tenant JWKS (audience + issuer checked) | `require_user` |
-| Collector | Per-user agent token (`AGENT_TOKEN`), minted from Settings, stored hashed | `require_agent` |
+| Collector | Per-user agent token, obtained once via browser sign-in, stored hashed | `require_agent` |
 
 The roles are **disjoint, not hierarchical**: the agent token is rejected on dashboard
 reads, and a user token is rejected on ingest. The backend aborts startup if

@@ -6,8 +6,12 @@ import platform
 import subprocess
 import time
 import plistlib
+import secrets
+import webbrowser
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlencode, urlparse
 from dotenv import load_dotenv
 
 # The collector runs from its own directory but the .env lives at the project
@@ -18,10 +22,16 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # to be configurable for any deployment that isn't all-on-one-machine.
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
+# Where the administrator signs in to connect this Mac. Production serves the
+# dashboard from the backend's origin; local development runs it on Vite.
+DASHBOARD_URL = os.getenv("DASHBOARD_URL") or (
+    "http://localhost:3000" if BACKEND_URL == "http://localhost:8000" else BACKEND_URL)
+
 # The agent has no user to sign in as, so it authenticates to the backend with
-# an agent token minted from the dashboard's Settings page instead of an Auth0 token.
-AGENT_TOKEN = os.getenv("AGENT_TOKEN")
-AUTH_HEADERS = {"Authorization": f"Bearer {AGENT_TOKEN}"}
+# an agent token tied to the administrator's account. It is obtained once
+# through the browser (see enroll_via_browser) and kept here.
+TOKEN_FILE = Path.home() / ".storagewatch" / "agent_token"
+AUTH_HEADERS = {}  # set in main() once the token is known
 
 def get_volume_info(mountpoint):
     """Everything diskutil knows about a mounted volume, in one call."""
@@ -325,21 +335,85 @@ def send_metrics(metrics):
             headers=AUTH_HEADERS,
             timeout=5
         )
-        # A rejected token or payload would otherwise fail silently every cycle.
-        response.raise_for_status()
-        print(f"✓ Metrics sent: {metrics['used_percent']:.1f}% used, R:{metrics['read_bytes_per_sec']/1e6:.0f}MB/s W:{metrics['write_bytes_per_sec']/1e6:.0f}MB/s")
-        return True
     except Exception as e:
         print(f"✗ Error sending metrics: {e}")
-    return False
+        return False
+    if response.status_code == 401:
+        raise TokenRejected()
+    if not response.ok:
+        # A rejected payload would otherwise fail silently every cycle.
+        print(f"✗ Backend rejected metrics: HTTP {response.status_code} {response.text[:200]}")
+        return False
+    print(f"✓ Metrics sent: {metrics['used_percent']:.1f}% used, R:{metrics['read_bytes_per_sec']/1e6:.0f}MB/s W:{metrics['write_bytes_per_sec']/1e6:.0f}MB/s")
+    return True
+
+def load_or_enroll_token():
+    """This Mac's agent token: from .env if set, else saved by an earlier
+    sign-in, else obtained now through the browser."""
+    if os.getenv("AGENT_TOKEN"):
+        return os.getenv("AGENT_TOKEN")
+    if TOKEN_FILE.exists():
+        return TOKEN_FILE.read_text().strip()
+    return connect_this_mac()
+
+def connect_this_mac():
+    """Sign in through the browser and save the resulting token."""
+    token = enroll_via_browser()
+    TOKEN_FILE.parent.mkdir(mode=0o700, exist_ok=True)
+    TOKEN_FILE.write_text(token)
+    TOKEN_FILE.chmod(0o600)  # a credential: readable by this user only
+    print(f"✓ Connected. Token saved to {TOKEN_FILE}\n")
+    return token
+
+class TokenRejected(Exception):
+    """The backend no longer accepts this Mac's token."""
+
+def enroll_via_browser():
+    """Connect this Mac by signing in on the dashboard — nothing copied by hand.
+
+    Opens the dashboard's /connect page. The administrator signs in with Auth0
+    there and clicks Connect; the page mints an agent token and redirects the
+    browser to this one-shot listener on 127.0.0.1. `state` ties the answer to
+    this request, so no other page can plant a token of its own.
+    """
+    state = secrets.token_urlsafe(16)
+    received = {}
+
+    class Callback(BaseHTTPRequestHandler):
+        def do_GET(self):
+            query = parse_qs(urlparse(self.path).query)
+            if query.get("state") == [state] and query.get("token"):
+                received["token"] = query["token"][0]
+                # Straight back to the dashboard, which fills in within seconds.
+                self.send_response(302)
+                self.send_header("Location", DASHBOARD_URL)
+                self.end_headers()
+            else:
+                self.send_error(400, "Not a StorageWatch connect response")
+
+        def log_message(self, *args):
+            pass  # keep the terminal quiet
+
+    server = HTTPServer(("127.0.0.1", 0), Callback)
+    url = f"{DASHBOARD_URL}/connect?" + urlencode({
+        "port": server.server_address[1], "state": state, "host": platform.node(),
+    })
+    print(f"Connect this Mac: sign in on the page opening in your browser.\n  {url}\n")
+    webbrowser.open(url)
+    try:
+        while "token" not in received:
+            server.handle_request()
+    finally:
+        server.server_close()
+    return received["token"]
 
 def main():
     """Run collector loop."""
+    global AUTH_HEADERS
     print(f"Starting StorageWatch collector...")
     print(f"Backend: {BACKEND_URL}")
+    AUTH_HEADERS = {"Authorization": f"Bearer {load_or_enroll_token()}"}
     print(f"Sampling every 5 seconds...\n")
-    if not AGENT_TOKEN:
-        print("⚠ AGENT_TOKEN is not set — generate one under Settings in the dashboard.\n")
 
     cycle = 0
     while True:
@@ -360,6 +434,13 @@ def main():
         except KeyboardInterrupt:
             print("\n\nCollector stopped.")
             break
+        except TokenRejected:
+            # e.g. the token was minted against a different backend or database.
+            print("✗ The backend rejected this Mac's token — reconnecting through the browser.")
+            if os.getenv("AGENT_TOKEN"):
+                print("  Remove AGENT_TOKEN from .env so the new token is used next time.")
+            TOKEN_FILE.unlink(missing_ok=True)
+            AUTH_HEADERS = {"Authorization": f"Bearer {connect_this_mac()}"}
         except Exception as e:
             print(f"Error in collection loop: {e}")
             time.sleep(5)

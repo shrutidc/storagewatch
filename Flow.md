@@ -43,7 +43,22 @@ declared earlier.
 
 ## 2. Collector cycle
 
-One iteration every 5 seconds, with a slower nested cycle for hardware inventory:
+Startup finds its agent token, connecting through the browser the first time:
+
+```
+load_or_enroll_token()
+  ├─ AGENT_TOKEN in .env?            → use it
+  ├─ ~/.storagewatch/agent_token?    → use it
+  └─ enroll_via_browser()
+       ├─ listen on 127.0.0.1:<random port>, random state
+       ├─ open DASHBOARD_URL/connect?port&state&host
+       │    └─ browser: Auth0 sign-in → [Connect] → POST /api/agent-tokens
+       │               → redirect to 127.0.0.1:<port>/callback?token&state
+       ├─ state matches → save token (0600) → 302 back to the dashboard
+       └─ state wrong   → 400, keep waiting
+```
+
+Then one iteration every 5 seconds, with a slower nested cycle for hardware inventory:
 
 ```
 main() loop, cycle N
