@@ -539,42 +539,6 @@ main {
   color: #555;
 }
 
-/* Alerts beside AI Analysis on the dashboard; stacks on narrow screens. */
-.two-col {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 20px;
-  margin-bottom: 30px;
-}
-
-.two-col .alerts-list {
-  max-height: 420px;
-  overflow-y: auto;
-}
-
-button.alert-item {
-  width: 100%;
-  text-align: left;
-  border-top: 0;
-  border-right: 0;
-  border-bottom: 0;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-
-.alert-item.selected {
-  outline: 2px solid #667eea;
-}
-
-.ai-analysis {
-  white-space: pre-wrap;
-  font-size: 14px;
-  line-height: 1.5;
-  color: #333;
-  margin-bottom: 15px;
-}
-
 .command-box {
   background: #1e1e2e;
   color: #9ece6a;

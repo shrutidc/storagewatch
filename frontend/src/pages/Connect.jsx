@@ -18,8 +18,8 @@ function Connect() {
   if (!Number.isInteger(port) || port < 1024 || port > 65535) {
     return (
       <p className="no-data">
-        This link is incomplete. On the Mac to monitor, run{' '}
-        <code>python collector/collector.py</code> — it opens the right page.
+        This link is incomplete. Start the collector on the Mac to monitor (the
+        command is under Settings) and it opens the right page.
       </p>
     )
   }

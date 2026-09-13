@@ -7,6 +7,8 @@ import subprocess
 import time
 import plistlib
 import secrets
+import shutil
+import sys
 import webbrowser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -359,11 +361,14 @@ def load_or_enroll_token():
 def connect_this_mac():
     """Sign in through the browser and save the resulting token."""
     token = enroll_via_browser()
+    save_token(token)
+    print(f"✓ Connected. Token saved to {TOKEN_FILE}\n")
+    return token
+
+def save_token(token):
     TOKEN_FILE.parent.mkdir(mode=0o700, exist_ok=True)
     TOKEN_FILE.write_text(token)
     TOKEN_FILE.chmod(0o600)  # a credential: readable by this user only
-    print(f"✓ Connected. Token saved to {TOKEN_FILE}\n")
-    return token
 
 class TokenRejected(Exception):
     """The backend no longer accepts this Mac's token."""
@@ -445,5 +450,45 @@ def main():
             print(f"Error in collection loop: {e}")
             time.sleep(5)
 
+# The installed copy runs from ~/.storagewatch rather than wherever it was
+# downloaded: macOS privacy controls stop background processes reading
+# ~/Documents, ~/Desktop and ~/Downloads.
+INSTALL_DIR = TOKEN_FILE.parent
+LAUNCH_AGENT = Path.home() / "Library" / "LaunchAgents" / "tech.storagewatch.collector.plist"
+
+def install():
+    """Connect this Mac, then run the collector in the background at every
+    login, restarted if it exits — nobody has to start the script again."""
+    save_token(load_or_enroll_token())  # the browser step happens now, in the foreground
+    script = INSTALL_DIR / "collector.py"
+    if Path(__file__).resolve() != script:
+        shutil.copy(__file__, script)
+    log = INSTALL_DIR / "collector.log"
+    LAUNCH_AGENT.parent.mkdir(parents=True, exist_ok=True)
+    LAUNCH_AGENT.write_bytes(plistlib.dumps({
+        "Label": "tech.storagewatch.collector",
+        "ProgramArguments": [sys.executable, str(script)],
+        "EnvironmentVariables": {"BACKEND_URL": BACKEND_URL, "PYTHONUNBUFFERED": "1"},
+        "RunAtLoad": True,
+        "KeepAlive": True,
+        "StandardOutPath": str(log),
+        "StandardErrorPath": str(log),
+    }))
+    subprocess.run(["launchctl", "unload", str(LAUNCH_AGENT)], capture_output=True)
+    subprocess.run(["launchctl", "load", "-w", str(LAUNCH_AGENT)], check=True)
+    print("✓ StorageWatch now runs in the background whenever you're logged in to this Mac.")
+    print(f"  Log:    {log}")
+    print(f"  Remove: {sys.executable} {script} --uninstall")
+
+def uninstall():
+    subprocess.run(["launchctl", "unload", str(LAUNCH_AGENT)], capture_output=True)
+    LAUNCH_AGENT.unlink(missing_ok=True)
+    print("✓ Background collector removed.")
+
 if __name__ == "__main__":
-    main()
+    if "--install" in sys.argv:
+        install()
+    elif "--uninstall" in sys.argv:
+        uninstall()
+    else:
+        main()

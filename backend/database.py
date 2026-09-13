@@ -208,21 +208,9 @@ def has_recent_alert(owner_sub, hostname, alert_type, severity):
         LIMIT 1
     """, (owner_sub, hostname, alert_type, severity)) is not None
 
-def get_alert(owner_sub, alert_id):
-    """One of the user's alerts, or None — including when it is someone else's."""
-    return _one("""
-        SELECT * FROM alerts WHERE owner_sub = %s AND id = %s
-    """, (owner_sub, alert_id))
-
-def update_alert_explanation(owner_sub, alert_id, ai_explanation):
-    """Attach an AI explanation to one of the user's alerts. Owner-scoped
-    because the id comes from the browser."""
-    _execute("""
-        UPDATE alerts SET ai_explanation = %s WHERE id = %s AND owner_sub = %s
-    """, (ai_explanation, alert_id, owner_sub))
-
 def get_recent_alerts(owner_sub, limit=10, hostname=None):
-    """Unresolved alerts for the user's machines, newest first."""
+    """Unresolved alerts for the user's machines, newest first. limit=None
+    returns all of them (LIMIT NULL is no limit in Postgres)."""
     return _all("""
         SELECT * FROM alerts
         WHERE owner_sub = %s AND resolved = FALSE

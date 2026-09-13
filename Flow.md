@@ -93,7 +93,7 @@ POST /api/metrics
   │                                    samples; fires if > 4× their mean
   └─ for each anomaly
        ├─ has_recent_alert()        → skip if same type+severity in last 10 min
-       └─ insert_alert()            → no LLM call; explained on demand (section 5b)
+       └─ insert_alert()            → no LLM call; the AI answers only when asked (section 5)
 ```
 
 ## 4. Dashboard load and poll
@@ -113,9 +113,9 @@ fetchPage()
   ├─ Promise.all, all Depends(require_user):
   │    ├─ /api/metrics/current            every page (header status + host)
   │    ├─ /api/alerts                     every page (sidebar count)
-  │    ├─ /api/metrics/history?limit=100  Dashboard, Performance; reversed for display
-  │    └─ /api/volumes                    Volumes only; last hour, grouped per pool
-  └─ /api/system-info, own try/catch     Volumes, Disks, APFS, Performance; 404s until
+  │    ├─ /api/metrics/history?limit=100  reversed for display
+  │    └─ /api/volumes                    last hour, grouped per pool
+  └─ /api/system-info, own try/catch     disk + APFS sections; 404s until
                                           the collector's first 60s cycle lands, so a
                                           failure here must not break the main poll
 ```
@@ -125,8 +125,8 @@ audience and issuer. An **opaque** token — what Auth0 returns when no register
 is requested — fails here, which surfaces as a logged-in dashboard with empty cards and
 401s in the network tab.
 
-Pages: `/` the single-page dashboard (PRD §21), plus drill-downs `/volumes`, `/disks`,
-`/apfs`, `/performance`, `/alerts`, `/settings`.
+Pages: `/` the single-page dashboard (PRD §21) with every section, `/settings`, and
+`/connect` (the collector's sign-in).
 
 ## 5. AI chat turn
 
@@ -151,21 +151,6 @@ POST /api/ai/chat  { message, thread_id? }
 `thread_id` carries conversation continuity across turns; the grounding context is
 regenerated each time so answers cannot drift onto stale figures.
 
-## 5b. Explain with AI
-
-```
-Dashboard: select an alert → [Explain with AI]
-POST /api/ai/explain  { alert_id }
-  ├─ Depends(require_user)
-  ├─ get_alert(owner, id)                  → 404 unless the alert is the caller's
-  ├─ build_live_context(owner, alert.hostname)
-  ├─ call_backboard(PRD §20 prompt, system_prompt=context)
-  └─ update_alert_explanation(owner, ...)  → stored on the alert, shown on reload
-```
-
-A plain `def` handler, so it runs in FastAPI's worker pool and a slow LLM call never
-stalls ingestion on the event loop.
-
 ## 6. Request routing in production
 
 With `frontend/dist` built, one origin serves everything:
@@ -173,6 +158,7 @@ With `frontend/dist` built, one origin serves everything:
 ```
 request
   ├─ /health                → JSON, unauthenticated
+  ├─ /install.sh, /collector.py → the collector installer, unauthenticated
   ├─ /api/*  matched        → API route, authenticated
   ├─ /api/*  unmatched      → JSON 404       (never the dashboard)
   └─ anything else          → index.html     (client-side routes survive reload)

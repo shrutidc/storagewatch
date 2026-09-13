@@ -45,9 +45,9 @@ Two consequences worth internalising:
 
 | Component | Runs | Responsibility |
 |---|---|---|
-| `collector/` | On the monitored Mac | Samples volumes, disks, APFS state; POSTs to the backend |
+| `collector/` | On the monitored Mac | Samples volumes, disks, APFS state; POSTs to the backend; installs itself as a LaunchAgent via `/install.sh` |
 | `backend/` | Anywhere reachable | Ingests, stores, detects anomalies, serves the API and AI, serves the built dashboard in production |
-| `frontend/` | Browser | Single-page React dashboard plus drill-down pages, Auth0 login, Recharts, AI chat |
+| `frontend/` | Browser | Single-page React dashboard, Settings, Auth0 login, Recharts, AI chat |
 
 The collector must stay on the machine being monitored — it shells out to `diskutil`,
 `fdesetup` and `tmutil`. The backend can live elsewhere; `BACKEND_URL` points the agent
@@ -89,7 +89,7 @@ Three tables, created automatically from `backend/schema.sql`:
 
 - **`filesystem_metrics`** — hypertable on `time`. One row per volume per sample.
 - **`alerts`** — `alert_type`, `severity`, `message`, `metric_value`, `resolved`, plus
-  the AI explanation stored when an administrator clicks **Explain with AI**.
+  an `ai_explanation` column that is no longer written (the AI is chat-only).
 - **`system_info`** — single upserted JSONB row: physical disks, APFS containers,
   FileVault state, snapshot count. In the database rather than in memory so a backend
   restart doesn't blank the Disks and APFS pages.

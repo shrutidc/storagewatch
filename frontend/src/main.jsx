@@ -1,14 +1,9 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Auth0Provider } from '@auth0/auth0-react'
 import App from './App.jsx'
 import Dashboard from './pages/Dashboard.jsx'
-import Volumes from './pages/Volumes.jsx'
-import Disks from './pages/Disks.jsx'
-import Apfs from './pages/Apfs.jsx'
-import Performance from './pages/Performance.jsx'
-import Alerts from './pages/Alerts.jsx'
 import Settings from './pages/Settings.jsx'
 import Connect from './pages/Connect.jsx'
 
@@ -43,13 +38,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <Routes>
         <Route path="/" element={<App />}>
           <Route index element={<Dashboard />} />
-          <Route path="volumes" element={<Volumes />} />
-          <Route path="disks" element={<Disks />} />
-          <Route path="apfs" element={<Apfs />} />
-          <Route path="performance" element={<Performance />} />
-          <Route path="alerts" element={<Alerts />} />
           <Route path="settings" element={<Settings />} />
           <Route path="connect" element={<Connect />} />
+          {/* The old per-tab URLs are now sections of the dashboard. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
     </AuthProvider>

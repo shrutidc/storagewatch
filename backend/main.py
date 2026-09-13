@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Depends, Body
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from models import Metrics, MetricsResponse, Alert
 from database import (init_db, insert_metrics, get_latest_metrics, get_metrics_history,
-                      insert_alert, has_recent_alert, get_alert, update_alert_explanation, get_recent_alerts,
+                      insert_alert, has_recent_alert, get_recent_alerts,
                       get_all_volumes_latest, save_system_info, get_system_info,
                       get_hosts, create_agent_token, list_agent_tokens)
 from alerts import detect_anomalies
@@ -50,8 +50,8 @@ def post_metrics(metrics: Metrics, owner_sub: str = Depends(require_agent)):
     try:
         insert_metrics(owner_sub, metrics)
 
-        # Detect anomalies. Alerts are explained on demand (POST /api/ai/explain),
-        # so ingestion never waits on, or pays for, an LLM call.
+        # Detect anomalies. The AI answers only when asked in the chat, so
+        # ingestion never waits on, or pays for, an LLM call.
         anomalies = detect_anomalies(metrics, owner_sub)
 
         for anomaly in anomalies:
@@ -106,9 +106,10 @@ def get_volumes(hostname: str | None = None,
 @app.get("/api/alerts")
 def get_alerts(hostname: str | None = None,
                      user: dict = Depends(require_user)):
-    """Unresolved alerts for the caller's machines."""
+    """Every unresolved alert for the caller's machines, newest first. Unbounded:
+    alerts are deduplicated at ingest, so the list stays short."""
     try:
-        results = get_recent_alerts(user["sub"], limit=10, hostname=hostname)
+        results = get_recent_alerts(user["sub"], limit=None, hostname=hostname)
         return [dict(r) for r in results]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -402,44 +403,17 @@ def ai_chat(data: dict, user: dict = Depends(require_user)):
     )
     return {"message": reply, "thread_id": new_thread_id}
 
-@app.post("/api/ai/explain")
-def ai_explain(alert_id: int = Body(..., embed=True),
-               user: dict = Depends(require_user)):
-    """Explain one of the caller's alerts, grounded in that machine's live
-    telemetry. The answer is stored on the alert so it survives a reload."""
-    try:
-        alert = get_alert(user["sub"], alert_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    if not alert:
-        raise HTTPException(status_code=404, detail="Alert not found")
+# The collector has to run on the Mac it measures, so the backend hands out a
+# one-line installer: curl -fsSL https://storagewatch.tech/install.sh | sh
+COLLECTOR_DIR = Path(__file__).resolve().parent.parent / "collector"
 
-    prompt = f"""Analyze this macOS filesystem event using the telemetry above.
+@app.get("/install.sh")
+def install_script():
+    return FileResponse(COLLECTOR_DIR / "install.sh", media_type="text/plain")
 
-Alert: {alert['alert_type']} ({alert['severity']}) on {alert['hostname']}, raised at {alert['created_at'].isoformat()}
-Detected: {alert['message']}
-
-Explain:
-1. What happened.
-2. Possible causes.
-3. Severity.
-4. What the administrator should inspect.
-
-Keep the response concise and technical."""
-
-    mock_explanation = (
-        f"{alert['message']}. (Mock analysis — set BACKBOARD_API_KEY for real AI insights.)"
-    )
-
-    explanation, _ = call_backboard(
-        prompt, None, mock_explanation,
-        system_prompt=build_live_context(user["sub"], alert["hostname"]),
-    )
-    try:
-        update_alert_explanation(user["sub"], alert_id, explanation)
-    except Exception as e:
-        print(f"Failed to store AI explanation for alert {alert_id}: {e}")
-    return {"alert_id": alert_id, "explanation": explanation}
+@app.get("/collector.py")
+def collector_script():
+    return FileResponse(COLLECTOR_DIR / "collector.py", media_type="text/plain")
 
 # Serve the built dashboard from this same app, so the browser talks to one
 # origin and /api calls need no CORS or proxy. Vite's dev proxy only exists

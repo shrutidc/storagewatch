@@ -67,7 +67,9 @@ to access resource server"* and login never completes.
    ```
    On first run it opens the dashboard in your browser. Sign in, click **Connect**, and
    you land on the Dashboard as data starts arriving. The token is saved to
-   `~/.storagewatch/agent_token`, so later runs connect without asking.
+   `~/.storagewatch/agent_token`, so later runs connect without asking. To keep it
+   running in the background at every login instead, run `python collector.py --install`
+   once (`--uninstall` removes it).
 
 ### Production build
 
@@ -97,8 +99,9 @@ dashboard, Python to serve it — and Render's native Python runtime has no Node
    Domains** and create the DNS record it gives you at your registrar.
 3. In Auth0, add `https://storagewatch.tech` to Allowed Callback URLs, Logout
    URLs and Web Origins.
-4. On the monitored Mac, set `BACKEND_URL=https://storagewatch.tech` in `.env`
-   and restart the collector.
+4. On each Mac to monitor, run `curl -fsSL https://storagewatch.tech/install.sh | sh`.
+   It connects the Mac to your account and keeps the collector running in the
+   background at every login. The dashboard shows this command until a Mac reports.
 
 The frontend's Auth0 settings come from the committed
 `frontend/.env.production`, since Vite inlines `VITE_*` at build time and those
@@ -144,7 +147,7 @@ Mac Agent (collector) → FastAPI Backend → Tiger Data
 
 ## API
 
-Every API endpoint except `/health` is authenticated. `agent` means an agent token
+Every API endpoint except `/health`, `/install.sh` and `/collector.py` is authenticated. `agent` means an agent token
 obtained by the collector's browser sign-in; `user` means an Auth0 access token. (In a production build the backend
 also serves the dashboard's static files on unmatched paths — see above.)
 
@@ -163,7 +166,8 @@ also serves the dashboard's static files on unmatched paths — see above.)
 | GET | `/api/agent-tokens` | user | Metadata for the caller's agent tokens |
 | POST | `/api/agent-tokens` | user | Mint an agent token; called by the Connect page (plaintext returned once) |
 | POST | `/api/ai/chat` | user | Conversational analysis, grounded in live telemetry |
-| POST | `/api/ai/explain` | user | Explain one alert (`{"alert_id": N}`) with Backboard; stored on the alert |
+| GET | `/install.sh` | — | One-line collector installer for macOS |
+| GET | `/collector.py` | — | The collector script the installer downloads |
 
 ## Data model
 
@@ -193,11 +197,11 @@ sample — otherwise a disk sitting at 85% would add a row and an LLM call every
 
 ## Dashboard
 
-Everything the PRD's single-page dashboard (§21) calls for is on **Dashboard**: system
-status and host, storage / read / write cards, the I/O graph, and alerts beside an AI
-Analysis panel with **Explain with AI**. **Volumes**, **Disks**, **APFS**,
-**Performance**, **Alerts** and **Settings** are optional drill-downs. Each page fetches
-only its own data, and polling pauses while the tab is in the background.
+One page, per the PRD's single-page dashboard (§21): system status and host, storage /
+read / write cards, then I/O performance with the graph, every alert, volumes, physical
+disks and APFS containers. Questions about any of it go to the **Ask AI** chat.
+**Settings** lists connected Macs and the install command. Polling pauses while the tab
+is in the background.
 
 ## Demo
 
@@ -208,8 +212,8 @@ mkfile 2g ~/storagewatch-demo   # write burst → spike on the Performance chart
 rm ~/storagewatch-demo          # capacity recovers
 ```
 
-Expect the write-activity alert within ~10 seconds. Select it and click **Explain with
-AI** to see Backboard analyze it against the live numbers.
+Expect the write-activity alert within ~10 seconds. Ask the AI (bottom right) about the
+spike to see it analyze the live numbers.
 
 ## Troubleshooting
 

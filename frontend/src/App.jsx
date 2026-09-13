@@ -8,12 +8,15 @@ import './App.css'
 // every page. Nothing else is requested: each call costs the server a token
 // check and a database round-trip, twelve times a minute.
 const PAGE_DATA = {
-  '/': ['history'],
-  '/volumes': ['volumes', 'systemInfo'],
-  '/disks': ['systemInfo'],
-  '/apfs': ['systemInfo'],
-  '/performance': ['history', 'systemInfo'],
+  '/': ['history', 'volumes', 'systemInfo'],
 }
+
+// The one-line collector installer. In development the API runs on :8000
+// rather than Vite's :3000, so the installer is pointed there explicitly.
+const API_ORIGIN = import.meta.env.DEV ? 'http://localhost:8000' : window.location.origin
+const INSTALL_COMMAND = import.meta.env.DEV
+  ? `curl -fsSL ${API_ORIGIN}/install.sh | STORAGEWATCH_URL=${API_ORIGIN} sh`
+  : `curl -fsSL ${API_ORIGIN}/install.sh | sh`
 
 function App() {
   const { loginWithRedirect, logout, user, isAuthenticated, isLoading,
@@ -199,13 +202,6 @@ function App() {
       <nav className="sidebar">
         <h2 className="sidebar-title">StorageWatch</h2>
         <NavLink to="/" end className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Dashboard</NavLink>
-        <NavLink to="/volumes" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Volumes</NavLink>
-        <NavLink to="/disks" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Disks</NavLink>
-        <NavLink to="/apfs" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>APFS</NavLink>
-        <NavLink to="/performance" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Performance</NavLink>
-        <NavLink to="/alerts" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>
-          Alerts{alerts.length > 0 ? ` (${alerts.length})` : ''}
-        </NavLink>
         <NavLink to="/settings" className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>Settings</NavLink>
       </nav>
 
@@ -254,14 +250,20 @@ function App() {
           ) : (metrics || onSettings || onConnect) ? (
             // Settings and Connect must render without metrics: a new user has
             // no data until their first collector connects.
-            <Outlet context={{ metrics, history, alerts, volumes, systemInfo, lastRefresh, hosts, authConfig }} />
+            <Outlet context={{ metrics, history, alerts, volumes, systemInfo, lastRefresh, hosts,
+                               authConfig, installCommand: INSTALL_COMMAND }} />
           ) : !fetched ? (
             <p className="no-data">Loading metrics…</p>
           ) : (
-            <p className="no-data">
-              No metrics yet. On the Mac to monitor, run <code>python collector/collector.py</code>{' '}
-              — it opens this site, you sign in, and data appears here within seconds.
-            </p>
+            <div className="detail-section">
+              <h2>Connect this Mac</h2>
+              <p className="section-sub">
+                StorageWatch reads the disk of the Mac it runs on, so that Mac needs its small
+                collector. Run this once in Terminal: it connects the Mac to your account, then
+                keeps reporting in the background whenever you are logged in to it.
+              </p>
+              <pre className="command-box">{INSTALL_COMMAND}</pre>
+            </div>
           )}
         </main>
       </div>

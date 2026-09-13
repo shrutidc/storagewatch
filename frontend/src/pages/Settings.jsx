@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import axios from 'axios'
 
 function Settings() {
-  const { hosts, authConfig } = useOutletContext()
+  const { hosts, authConfig, installCommand } = useOutletContext()
   const [tokens, setTokens] = useState([])
   const [error, setError] = useState(null)
 
@@ -46,10 +46,11 @@ function Settings() {
       <div className="detail-section">
         <h2>Connect a Mac</h2>
         <p className="section-sub">
-          Run the collector on the Mac to monitor. It opens this site in your browser;
-          sign in, click Connect, and its data appears on the Dashboard.
+          Run this once in Terminal on the Mac to monitor. It opens this site to connect
+          the Mac to your account, then keeps reporting in the background whenever you
+          are logged in to that Mac.
         </p>
-        <pre className="command-box">python collector/collector.py</pre>
+        <pre className="command-box">{installCommand}</pre>
 
         {error && <p className="alert-ai-explanation">Error: {error}</p>}
 

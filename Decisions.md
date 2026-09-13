@@ -78,6 +78,14 @@ targets the loopback address on a numeric port, and a random `state` stops any o
 from planting a token. No backend change was needed: the page calls the existing
 `POST /api/agent-tokens`.
 
+### The collector installs itself as a LaunchAgent
+
+A website cannot read its visitor's disk, so every monitored Mac runs the collector. To
+make that a one-time step, `/install.sh` downloads it into `~/.storagewatch`, connects the
+Mac through the browser, and registers a LaunchAgent that starts it at every login and
+restarts it if it exits. The copy lives outside `~/Documents` because macOS privacy
+controls stop background processes reading that folder.
+
 ### Missing secrets abort startup
 
 Absent `AUTH0_DOMAIN` or `AUTH0_AUDIENCE`, the process exits. Failing
@@ -160,21 +168,21 @@ Each turn now assembles volumes, capacity, throughput, disks, APFS roles, encryp
 FileVault, snapshots and active alerts from the database. Rebuilt **per turn** rather
 than per conversation, so a long chat cannot drift onto stale figures.
 
-### Alerts are explained on demand, not automatically
+### The AI is the chat, not a per-alert panel
 
 Every alert used to trigger a background LLM call, so a burst of alerts meant a burst of
-spend nobody necessarily read. The dashboard's **Explain with AI** button now calls
-`POST /api/ai/explain` for the selected alert, as the PRD specifies, and the answer is
-stored on the alert. The AI handlers are plain `def` so FastAPI runs them in a worker
-thread: the LLM call blocks for seconds and would otherwise stall ingestion on the event
-loop.
+spend nobody necessarily read. An **Explain with AI** button replaced that, then was
+removed too: the **Ask AI** chat already sees every alert and the live telemetry, and two
+AI surfaces answering the same question was one too many. LLM calls now happen only when
+someone asks.
 
-### Pages fetch only what they display
+### The dashboard is one page
 
-The dashboard used to poll six endpoints every five seconds on every page, including two
-that scan the whole metrics history. Each page now requests only its own data, the
-machine list loads at sign-in and on Settings, `/api/volumes` scans only the last hour,
-and polling pauses while the tab is in the background.
+Every tab's content — performance, alerts, volumes, disks, APFS — is a section of the
+single dashboard the PRD describes (§21), so a demo never navigates. It polls five
+endpoints every five seconds; the machine list loads only at sign-in and on Settings
+(that query scans the whole history), `/api/volumes` scans only the last hour, and
+polling pauses while the tab is in the background.
 
 ### Database connections are pooled; handlers are plain `def`
 
