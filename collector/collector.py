@@ -27,6 +27,11 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # to be configurable for any deployment that isn't all-on-one-machine.
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
+# Set by the downloadable StorageWatch.app, which runs this collector as its
+# own child process: the app *is* the menu bar app, so the collector must not
+# install or remove one.
+IN_APP = os.getenv("STORAGEWATCH_IN_APP") == "1"
+
 # Where the administrator signs in to connect this Mac. Production serves the
 # dashboard from the backend's origin; local development runs it on Vite.
 DASHBOARD_URL = os.getenv("DASHBOARD_URL") or (
@@ -1141,7 +1146,8 @@ def main():
                     notify_new_alerts(alerts)
                     # Older backends don't send this; they get the behaviour
                     # they always had, which is the app left in place.
-                    apply_menu_bar(reply.get("menu_bar", True))
+                    if not IN_APP:
+                        apply_menu_bar(reply.get("menu_bar", True))
 
             # Disk/APFS info changes rarely — refresh every ~60s, not every cycle
             if cycle % 12 == 0:
@@ -1218,7 +1224,7 @@ MENU_BAR_AGENT = Path.home() / "Library" / "LaunchAgents" / "tech.storagewatch.m
 def menu_bar_installed():
     """Whether the menu bar app is on this Mac — the ground truth the dashboard
     is shown, rather than whatever was last asked for."""
-    return MENU_BAR_APP.is_dir()
+    return IN_APP or MENU_BAR_APP.is_dir()
 
 # A download that fails — no network, an older backend — must not be retried on
 # every five-second cycle.

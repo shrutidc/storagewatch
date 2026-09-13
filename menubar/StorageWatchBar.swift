@@ -67,12 +67,85 @@ final class Monitor: ObservableObject {
     var needsAttention: Bool { stale || !(status?.alerts.isEmpty ?? true) }
 }
 
+/// Runs the collector bundled inside the downloadable build of this app as a
+/// child process, restarting it if it exits, and registers the app to open at
+/// login. Does nothing in the menu-bar-only build (no bundled collector) or when
+/// the Terminal installer's background collector is present — a Mac never runs
+/// two collectors.
+final class CollectorRunner {
+    private var process: Process?
+    private let home = FileManager.default.homeDirectoryForCurrentUser
+
+    func start() {
+        guard let exe = Bundle.main.url(forAuxiliaryExecutable: "storagewatch-collector"),
+              FileManager.default.isExecutableFile(atPath: exe.path) else { return }
+        let terminalAgent = home.appendingPathComponent("Library/LaunchAgents/tech.storagewatch.collector.plist")
+        if FileManager.default.fileExists(atPath: terminalAgent.path) { return }
+        registerLoginItem()
+        launch(exe)
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            self?.process?.terminationHandler = nil
+            self?.process?.terminate()
+        }
+    }
+
+    private func launch(_ exe: URL) {
+        let p = Process()
+        p.executableURL = exe
+        var env = ProcessInfo.processInfo.environment
+        // storagewatch.tech unless pointed elsewhere, e.g. a Vultr-hosted backend:
+        //   defaults write tech.storagewatch.menubar ServerURL https://your-domain
+        env["BACKEND_URL"] = UserDefaults.standard.string(forKey: "ServerURL") ?? "https://storagewatch.tech"
+        env["STORAGEWATCH_IN_APP"] = "1"
+        env["PYTHONUNBUFFERED"] = "1"
+        p.environment = env
+        let log = home.appendingPathComponent(".storagewatch/collector.log")
+        try? FileManager.default.createDirectory(at: log.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: log.path) {
+            FileManager.default.createFile(atPath: log.path, contents: nil)
+        }
+        if let handle = try? FileHandle(forWritingTo: log) {
+            handle.seekToEndOfFile()
+            p.standardOutput = handle
+            p.standardError = handle
+        }
+        p.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { self?.launch(exe) }
+        }
+        try? p.run()
+        process = p
+    }
+
+    /// Opens the app at every login. Written but not loaded: loading it now
+    /// would start a second copy alongside this one.
+    private func registerLoginItem() {
+        guard let exe = Bundle.main.executablePath else { return }
+        let plist = home.appendingPathComponent("Library/LaunchAgents/tech.storagewatch.app.plist")
+        let agent: [String: Any] = [
+            "Label": "tech.storagewatch.app",
+            "ProgramArguments": [exe],
+            "RunAtLoad": true,
+            "KeepAlive": ["SuccessfulExit": false],
+        ]
+        try? FileManager.default.createDirectory(at: plist.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        (agent as NSDictionary).write(to: plist, atomically: true)
+    }
+}
+
+let collectorRunner = CollectorRunner()
+
 func gb(_ bytes: Double) -> String { String(format: "%.1f GB", bytes / 1e9) }
 func mbps(_ bytes: Double) -> String { String(format: "%.1f MB/s", bytes / 1e6) }
 
 @main
 struct StorageWatchBar: App {
     @StateObject private var monitor = Monitor()
+
+    init() { collectorRunner.start() }
 
     var body: some Scene {
         MenuBarExtra {

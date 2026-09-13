@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 # Handed to Macs by /install.sh and /collector.py, so nobody needs the repo.
 COPY collector/collector.py collector/install.sh ./collector/
-COPY menubar/StorageWatch.zip ./menubar/
+COPY menubar/StorageWatch.zip menubar/StorageWatch-Mac.zip ./menubar/
 # main.py locates the dashboard at ../frontend/dist relative to itself, so the
 # build output has to land in that same layout.
 COPY --from=frontend /frontend/dist ./frontend/dist
