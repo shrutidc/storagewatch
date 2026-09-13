@@ -187,6 +187,18 @@ function App() {
               <polyline points="13 7 18 12 13 17" />
             </svg>
           </button>
+          {/* The Mac app, with the collector inside, for anyone setting up a
+              machine — downloadable before signing in. */}
+          <a className="login-btn" href="/StorageWatch-Mac.zip" download
+             style={{ textDecoration: 'none', marginTop: 12 }}>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+                 strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 3v12" />
+              <polyline points="7 10 12 15 17 10" />
+              <path d="M5 21h14" />
+            </svg>
+            Download for Mac
+          </a>
           <p className="login-foot">Local · Encrypted · Observable</p>
         </div>
       </div>
