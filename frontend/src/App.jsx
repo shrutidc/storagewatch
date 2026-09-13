@@ -199,7 +199,11 @@ function App() {
               </select>
             )}
             <span>{user.name}</span>
-            <button onClick={() => logout()}>Logout</button>
+            {/* Without returnTo, Auth0 sends everyone to the first Allowed Logout
+                URL in the tenant — which was http://localhost:3000. */}
+            <button onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}>
+              Logout
+            </button>
           </div>
         </header>
 
