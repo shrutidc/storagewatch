@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import './App.css'
+import InstallCommand from './InstallCommand.jsx'
 
 // The one-line collector installer. In development the API runs on :8000
 // rather than Vite's :3000, so the installer is pointed there explicitly.
@@ -228,13 +229,17 @@ function App() {
             <p className="no-data">Loading metrics…</p>
           ) : (
             <div className="detail-section">
-              <h2>Connect this Mac</h2>
+              <h2>Analyze this Mac</h2>
               <p className="section-sub">
                 StorageWatch reads the disk of the Mac it runs on, so that Mac needs its small
-                collector. Run this once in Terminal: it connects the Mac to your account, then
-                keeps reporting in the background whenever you are logged in to it.
+                collector. A website can't start programs on your Mac, so copy this command and
+                run it once in Terminal: it connects the Mac to your account, then keeps
+                reporting in the background whenever you are logged in to it.
               </p>
-              <pre className="command-box">{INSTALL_COMMAND}</pre>
+              <InstallCommand command={INSTALL_COMMAND} />
+              <p className="section-sub">
+                Waiting for this Mac to report — this page updates by itself.
+              </p>
             </div>
           )}
         </main>

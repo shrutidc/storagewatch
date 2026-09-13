@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import axios from 'axios'
+import InstallCommand from '../InstallCommand.jsx'
 
 function Settings() {
   const { hosts, authConfig, installCommand } = useOutletContext()
@@ -50,7 +51,7 @@ function Settings() {
           the Mac to your account, then keeps reporting in the background whenever you
           are logged in to that Mac.
         </p>
-        <pre className="command-box">{installCommand}</pre>
+        <InstallCommand command={installCommand} />
 
         {error && <p className="alert-ai-explanation">Error: {error}</p>}
 

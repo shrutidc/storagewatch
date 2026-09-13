@@ -539,6 +539,13 @@ main {
   color: #555;
 }
 
+.install-steps {
+  margin: 4px 0 16px 20px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #555;
+}
+
 .command-box {
   background: #1e1e2e;
   color: #9ece6a;
