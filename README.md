@@ -29,6 +29,7 @@ answers.
 - **Download or one-line install** — a Mac app with everything bundled, or a Terminal
   command that works with any Python 3.9+, Apple's own included. The Mac
   connects through a browser sign-in and reports in the background at every login.
+  One command stops it and removes it again.
 - **Storage health** — capacity, live read/write throughput, APFS containers and
   volumes, physical disks with SMART plus the kernel's I/O error, retry and latency
   counts, and inode usage.
@@ -41,8 +42,9 @@ answers.
 - **Ask Anything** — an assistant that answers from the Mac's live telemetry.
 - **Menu bar app** — native Swift; usage and alerts at a glance without signing in.
 - **Private by design** — Auth0 sign-in, each administrator sees only their own Macs,
-  and the collector reads system data only — never personal files.
-- **Light and dark** — follows the Mac's appearance, or pin either theme.
+  and the collector reads system data only — never personal files. A privacy page lists
+  every field collected, and each account accepts it before its first dashboard.
+- **Any screen** — light and dark themes, and a layout that works on a phone.
 
 ## Architecture
 
@@ -316,9 +318,15 @@ cd ../backend && python main.py   # dashboard and API together on :8000
 
 ## Using the dashboard
 
-Sign in once — the session survives reloads and new tabs. The dashboard is a single page
-that refreshes every five seconds (pausing while the tab is in the background) and shows
-each fact once:
+Sign in once — the session survives reloads and new tabs. The first time, the
+[privacy page](https://storagewatch.tech/privacy) appears before the dashboard: it lists
+what the collector sends, and **Accept** unlocks once you have scrolled to its end.
+Acceptance is recorded against your account, so another browser or Mac doesn't ask
+again, and a revised page asks everyone once more.
+
+The dashboard is a single page that refreshes every five seconds (pausing while the tab
+is in the background) and shows each fact once. On a phone the sidebar becomes a bar
+across the top and wide tables scroll within their section:
 
 | Section | Shows |
 |---|---|
@@ -335,10 +343,11 @@ each fact once:
 **Ask Anything** (bottom right) answers questions about the machine from its live
 telemetry and suggests starter questions.
 
-**Settings** holds your connected Macs, the install command, the **Menu bar app** switch
-for each Mac, and **Appearance** — Light, Dark, or System to follow the Mac. Appearance
-is saved in the browser; the menu bar switch is applied by that Mac's collector within
-seconds. All animations respect macOS's *Reduce motion* setting.
+**Settings** holds your connected Macs, the download and install command, **Stop
+monitoring a Mac** (the uninstall command), the **Menu bar app** switch for each Mac,
+**Appearance** — Light, Dark, or System to follow the Mac — and a link to the privacy
+page. Appearance is saved in the browser; the menu bar switch is applied by that Mac's
+collector within seconds. All animations respect macOS's *Reduce motion* setting.
 
 **Demo:** with a Mac connected, create a burst of writes and watch the graph, an alert
 and a notification arrive within about ten seconds:
@@ -380,10 +389,16 @@ stopped. Clicking it shows every volume, throughput, disk health, FileVault, loc
 snapshots, open alerts and **Open Dashboard**. New alerts arrive as macOS notifications.
 
 The app reads the status file the collector writes each cycle
-(`~/.storagewatch/status.json`), so it never asks you to sign in. It is installed with
-the collector, starts at login, restarts if it crashes, and can be switched off per Mac
-in Settings. After changing its source, rebuild the distributed
-`menubar/StorageWatch.zip` with `menubar/build.sh`.
+(`~/.storagewatch/status.json`), so it never asks you to sign in. The Terminal installer
+adds it alongside the collector, where it can be switched off per Mac in Settings; the
+downloadable app is the same app with the collector bundled inside. Either way it starts
+at login and restarts if it crashes. **Quit StorageWatch** closes it until the next
+login; the uninstall command removes it for good.
+
+After changing its source, rebuild both distributed apps: `menubar/build.sh` makes
+`StorageWatch.zip` (universal) and `menubar/build-app.sh` makes `StorageWatch-Mac.zip`
+(with the bundled collector). `menubar/make-icon.sh` regenerates the app icon from the
+logo.
 
 ## Security and privacy
 
@@ -396,12 +411,18 @@ in Settings. After changing its source, rebuild the distributed
 - **System data only.** The collector uses `diskutil`, `ioreg`, `df`, `nfsstat`, the
   directory service and similar tools. It opens no personal files unless per-user disk
   usage is enabled, and marks any size it could not fully read as *partial*.
+- **Consent on record.** Each account accepts the privacy page before its dashboard
+  loads. The server records which revision was accepted and when; changing what is
+  collected means a new revision, which asks everyone again.
+- **The assistant is the only extra recipient.** Asking it a question sends that Mac's
+  telemetry to Backboard and Gemini; otherwise telemetry stays with the backend and its
+  database.
 - **Fails closed.** The backend refuses to start without its Auth0 settings.
 
 ## API reference
 
-All endpoints except `/health`, `/install.sh`, `/collector.py` and `/StorageWatch.zip`
-require authentication: **user** is an Auth0 access token, **agent** a collector token.
+All endpoints except `/health` and the downloads at the end of the table require
+authentication: **user** is an Auth0 access token, **agent** a collector token.
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
@@ -419,14 +440,18 @@ require authentication: **user** is an Auth0 access token, **agent** a collector
 | PUT | `/api/preferences` | user | Per-Mac preferences (menu bar app on or off) |
 | GET | `/api/agent-tokens` | user | Metadata for the caller's collector tokens |
 | POST | `/api/agent-tokens` | user | Issue a collector token (used by the Connect page) |
+| GET | `/api/policy` | user | Whether the caller has accepted the current privacy page |
+| POST | `/api/policy/accept` | user | Record acceptance of the current privacy page |
 | POST | `/api/ai/chat` | user | Ask the assistant, grounded in live telemetry |
 | POST | `/api/metrics` | agent | Ingest one volume's sample and evaluate alerts |
 | POST | `/api/system-info` | agent | Store the disk, APFS, health and share inventory |
 | POST | `/api/user-usage` | agent | Store a per-user sizing pass |
 | POST | `/api/alerts/report` | agent | Submit an alert raised on the Mac |
 | GET | `/install.sh` | — | The collector installer |
+| GET | `/uninstall.sh` | — | Stops StorageWatch and removes it from a Mac |
 | GET | `/collector.py` | — | The collector the installer downloads |
 | GET | `/StorageWatch.zip` | — | The menu bar app the installer downloads |
+| GET | `/StorageWatch-Mac.zip` | — | The downloadable app, collector bundled |
 
 ## Data model
 
@@ -440,6 +465,7 @@ Created automatically from `backend/schema.sql` when the backend starts.
 | `user_usage` | Per-user sizing passes: size, quota, largest folders, and whether the walk was complete |
 | `host_preferences` | Per-Mac settings, and what that Mac's collector last confirmed |
 | `agent_tokens` | Hashed collector tokens and their owners |
+| `policy_acceptance` | Which privacy-page revision each account accepted, and when |
 
 Throughput is measured per physical disk — macOS keeps no per-volume counters — so the
 same reading accompanies every volume in a sample.
@@ -457,16 +483,20 @@ same reading accompanies every volume in a sample.
 | The menu bar icon doesn't appear | On a MacBook with a notch, macOS hides icons that don't fit. Hold ⌘ and drag an unneeded icon off the menu bar, and check the switch in Settings is on. |
 | macOS asks for access to Documents, Desktop or Photos | Per-user disk usage is on for that Mac; reinstall without `STORAGEWATCH_SIZE_HOMES=1`. |
 | Shared volumes is empty | No NFS, SMB or AFP share is mounted; one appears within a minute of mounting. |
+| *"StorageWatch" Not Opened — Apple could not verify…* | Expected for the downloaded app. Click **Done**, then **System Settings → Privacy & Security → Open Anyway**. |
+| StorageWatch keeps running after closing Terminal, deleting the app or signing out | The collector runs in the background with its own token. Run `curl -fsSL https://storagewatch.tech/uninstall.sh \| sh`. |
+| The Accept button on the privacy page stays grey | Scroll the page to its end; it unlocks there. |
 
 ## Project structure
 
 ```
 storagewatch/
-├── collector/        Python agent and install.sh — runs on each monitored Mac
-├── backend/          FastAPI server: auth, alert rules, schema, installer downloads
-├── frontend/         React dashboard (Vite)
+├── collector/        Python agent, install.sh and uninstall.sh — runs on each monitored Mac
+├── backend/          FastAPI server: auth, alert rules, consent, schema, downloads
+├── frontend/         React dashboard (Vite), privacy page and consent gate
 ├── menubar/          SwiftUI menu bar app; build.sh → StorageWatch.zip,
-│                     build-app.sh → StorageWatch-Mac.zip (app + bundled collector)
+│                     build-app.sh → StorageWatch-Mac.zip (app + bundled collector),
+│                     make-icon.sh → AppIcon.icns
 ├── Dockerfile        One image: builds the dashboard, serves it with the API
 ├── render.yaml       Render deployment
 ├── requirements.txt  Python dependencies for the backend and collector
