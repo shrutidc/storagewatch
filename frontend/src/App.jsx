@@ -17,6 +17,7 @@ const API_ORIGIN = import.meta.env.DEV ? 'http://localhost:8000' : window.locati
 const INSTALL_COMMAND = import.meta.env.DEV
   ? `curl -fsSL ${API_ORIGIN}/install.sh | STORAGEWATCH_URL=${API_ORIGIN} sh`
   : `curl -fsSL ${API_ORIGIN}/install.sh | sh`
+const UNINSTALL_COMMAND = `curl -fsSL ${API_ORIGIN}/uninstall.sh | sh`
 
 function App() {
   const { loginWithRedirect, logout, user, isAuthenticated, isLoading,
@@ -332,7 +333,8 @@ function App() {
             <div className="page" key={location.pathname}>
               <Outlet context={{ metrics, history, alerts, volumes, systemInfo, preferences,
                                  users, lastRefresh, hosts, authConfig,
-                                 installCommand: INSTALL_COMMAND }} />
+                                 installCommand: INSTALL_COMMAND,
+                                 uninstallCommand: UNINSTALL_COMMAND }} />
             </div>
           ) : !fetched ? (
             <p className="no-data">Loading metrics…</p>

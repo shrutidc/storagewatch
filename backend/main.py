@@ -642,6 +642,10 @@ COLLECTOR_DIR = Path(__file__).resolve().parent.parent / "collector"
 def install_script():
     return FileResponse(COLLECTOR_DIR / "install.sh", media_type="text/plain")
 
+@app.get("/uninstall.sh")
+def uninstall_script():
+    return FileResponse(COLLECTOR_DIR / "uninstall.sh", media_type="text/plain")
+
 @app.get("/collector.py")
 def collector_script():
     return FileResponse(COLLECTOR_DIR / "collector.py", media_type="text/plain")

@@ -6,7 +6,8 @@ import MenuBarSetting from '../MenuBarSetting.jsx'
 import ThemeSetting from '../ThemeSetting.jsx'
 
 function Settings() {
-  const { hosts, authConfig, installCommand } = useOutletContext()
+  const { hosts, authConfig, installCommand, uninstallCommand } = useOutletContext()
+  const [uninstallCopied, setUninstallCopied] = useState(false)
   const [tokens, setTokens] = useState([])
   const [error, setError] = useState(null)
 
@@ -74,6 +75,20 @@ function Settings() {
             </table>
           </>
         )}
+      </div>
+
+      <div className="detail-section">
+        <h2>Stop monitoring a Mac</h2>
+        <p className="section-sub">
+          The collector keeps running in the background even after you sign out here or
+          close Terminal. Run this in Terminal on the Mac to stop it and remove
+          StorageWatch, including the downloaded app.
+        </p>
+        <button className="explain-btn" onClick={() =>
+          navigator.clipboard.writeText(uninstallCommand).then(() => setUninstallCopied(true), () => {})}>
+          {uninstallCopied ? '✓ Copied — now paste it into Terminal' : 'Copy command'}
+        </button>
+        <pre className="command-box">{uninstallCommand}</pre>
       </div>
 
       <MenuBarSetting />

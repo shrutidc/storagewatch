@@ -1207,7 +1207,7 @@ def install():
     subprocess.run(["launchctl", "load", "-w", str(LAUNCH_AGENT)], check=True)
     print("✓ StorageWatch now runs in the background whenever you're logged in to this Mac.")
     print(f"  Log:    {log}")
-    print(f"  Remove: {sys.executable} {script} --uninstall")
+    print(f"  Remove: curl -fsSL {BACKEND_URL}/uninstall.sh | sh")
     # Not installed here: the collector that just started reconciles the menu
     # bar app against the dashboard's setting within a few seconds. Doing it
     # here as well would put the app back on a Mac where the administrator had

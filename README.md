@@ -126,14 +126,16 @@ and more. To turn it on for a Mac:
 curl -fsSL https://storagewatch.tech/install.sh | STORAGEWATCH_SIZE_HOMES=1 sh
 ```
 
-**Uninstall** (the installer prints this command):
+**Stop and uninstall.** The collector keeps running in the background, even with every
+Terminal window closed and after you sign out of the dashboard, because it reports
+with its own token. To stop it and remove StorageWatch from a Mac (Terminal install or
+the downloaded app):
 
 ```bash
-~/.storagewatch/venv/bin/python ~/.storagewatch/collector.py --uninstall
+curl -fsSL https://storagewatch.tech/uninstall.sh | sh
 ```
 
-To remove the downloaded app instead, choose **Quit StorageWatch** from its menu, delete
-it from Applications, and delete `~/Library/LaunchAgents/tech.storagewatch.app.plist`.
+The same command is under **Settings → Stop monitoring a Mac** on the dashboard.
 
 ## Development
 
